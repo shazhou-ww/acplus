@@ -23,5 +23,5 @@
 ## Acceptance criteria
 
 - [ ] D-AC01: A real native-authorized agent answers through HTTP
-- [ ] D-AC02: Instance and authorization failures remain isolated
+- [x] D-AC02: Instance and authorization failures remain isolated
 - [x] D-AC03: Shutdown preserves external processes and service identity

@@ -67,9 +67,20 @@ was not removed.
 ## Verification evidence
 
 [Real-environment verification](./Verification.md) records two independent live
-Host/ahpc instances, exact HTTP failures, sanitized configuration and owned
-shutdown/persistent-profile proofs. Deployment is blocked before native
-authorization: the selected native backend returned stream-destroyed RPC errors
-for session listing/creation. No authenticated task or actionable native
-authentication requirement was demonstrated; the missing criteria remain
-unchecked.
+Host/ahpc instances, sanitized configuration, exact task/turn correlations,
+cross-instance isolation and owned shutdown/persistent-session proofs. The
+historical stream-destroyed failure was traced to an existing 279-character
+Windows runtime executable path; an ordinary short private `--cli-data-dir`,
+populated normally by the native CLI, restored session operations without
+junctions, code patches or editor changes. Both real task attempts then returned
+the backend's explicit missing GitHub OAuth/Copilot HMAC authorization
+requirement. The tested Host disables Copilot native logged-in-user discovery
+and requires client-delivered authorization; a standalone CLI login is not
+sufficient for this connection. The alternative Claude provider successfully
+downloaded its native SDK into operation-owned storage, but its own
+inherited-context account check found no usable native login or API key. Real
+HTTP returned `backend_authentication_required` with the native authorization
+action. Deployment remains blocked on a supported native-authorized successful
+answer, not transport readiness or session creation. The authenticated-execution
+criterion remains unchecked; the proven isolation and cleanup criteria are
+complete.
