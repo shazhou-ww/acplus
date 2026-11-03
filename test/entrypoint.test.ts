@@ -7,7 +7,6 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import ts from "typescript";
@@ -16,13 +15,13 @@ import { expect, it } from "vitest";
 const exec = promisify(execFile);
 
 it("runs the real CLI entrypoint through a package-manager directory link", async () => {
-  const root = await mkdtemp(join(tmpdir(), "ahplex-entry-"));
+  const root = await mkdtemp(join(process.cwd(), ".test-entry-"));
   try {
     const real = join(root, "real");
     const linked = join(root, "linked");
     await mkdir(real);
     await writeFile(join(real, "package.json"), '{"type":"module"}');
-    for (const name of ["cli", "common"]) {
+    for (const name of ["cli", "common", "config"]) {
       const source = await readFile(
         new URL(`../src/${name}.ts`, import.meta.url),
         "utf8",

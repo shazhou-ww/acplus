@@ -2,15 +2,15 @@
 
 ## Steps
 
-- [ ] I-S01: Verify service and authorization contracts
-- [ ] I-S02: Implement configuration-driven lifecycle and forwarding
-- [ ] I-S03: Test and document the supported behavior
+- [x] I-S01: Verify service and authorization contracts
+- [x] I-S02: Implement configuration-driven lifecycle and forwarding
+- [x] I-S03: Test and document the supported behavior
 
 ## Acceptance criteria
 
-- [ ] I-AC01: Configured instances start and route independently
-- [ ] I-AC02: Authorization and ownership boundaries hold
-- [ ] I-AC03: The package and user-facing contract remain verifiable
+- [x] I-AC01: Configured instances start and route independently
+- [x] I-AC02: Authorization and ownership boundaries hold
+- [x] I-AC03: The package and user-facing contract remain verifiable
 
 # Deployment
 

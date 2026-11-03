@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../src/cli.js";
 import { start } from "../src/runtime.js";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 vi.mock("../src/runtime.js", () => ({ start: vi.fn() }));
 const originalInt = new Set(process.listeners("SIGINT"));
@@ -73,6 +75,36 @@ describe("CLI", () => {
     stop("SIGTERM");
     await Promise.resolve();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("loads an explicitly named configuration without selecting a service", async () => {
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const root = await mkdtemp(join(process.cwd(), ".test-cli-"));
+    try {
+      const path = join(root, "services.json");
+      const config = {
+        version: 1,
+        services: [
+          {
+            id: "external",
+            kind: "ahp-websocket",
+            lifecycle: "attached",
+            startupTimeoutMs: 100,
+            endpoint: { url: "ws://localhost:4321/" },
+          },
+        ],
+      };
+      await writeFile(path, JSON.stringify(config));
+      vi.mocked(start).mockResolvedValue({
+        url: "http://127.0.0.1:4280",
+        directory: root,
+        close: () => Promise.resolve(),
+      });
+      await main(["--instance", "test", "--config", path]);
+      expect(start).toHaveBeenCalledWith(expect.objectContaining({ config }));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("passes only explicit credential variables and surfaces shutdown failure", async () => {

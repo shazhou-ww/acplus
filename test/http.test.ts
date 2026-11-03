@@ -167,6 +167,46 @@ describe("resource API over real HTTP sockets", () => {
 });
 
 describe("ahpc HTTP normalization", () => {
+  it("preserves safe backend capability/auth/connection errors and rejects invalid bridge JSON", async () => {
+    const cases = [
+      ["backend_capability_unsupported", 501],
+      ["backend_authentication_required", 401],
+      ["host_unavailable", 503],
+      ["session_refused", 502],
+      ["session_unavailable", 502],
+      ["session_busy", 502],
+      ["backend_request_failed", 502],
+      ["invalid_json", 502],
+    ] as const;
+    let index = 0;
+    const backend = createServer((_request, response) => {
+      response.writeHead(500);
+      const code = cases[index++]?.[0];
+      response.end(
+        code === "invalid_json" ? "{" : JSON.stringify({ error: code }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      backend.listen(0, "127.0.0.1", resolve),
+    );
+    cleanup.push(
+      () =>
+        new Promise<void>((resolve) => {
+          backend.close(() => {
+            resolve();
+          });
+        }),
+    );
+    const client = new HttpAdapter(
+      `http://127.0.0.1:${(backend.address() as AddressInfo).port}`,
+      "fixture",
+    );
+    for (const [code, status] of cases)
+      await expect(client.call("test", {})).rejects.toMatchObject({
+        code: code === "invalid_json" ? "adapter_invalid_response" : code,
+        status,
+      });
+  });
   it("reports transport failure explicitly", async () => {
     await expect(
       new HttpAdapter("http://127.0.0.1:1", "fixture").call("test", {}),
@@ -206,7 +246,10 @@ describe("ahpc HTTP normalization", () => {
         response.writeHead(status);
         response.end(
           JSON.stringify({
-            error: status === 400 ? "auth_required" : "private token",
+            error:
+              status === 400
+                ? "backend_authentication_required"
+                : "private token",
           }),
         );
       });
@@ -226,7 +269,12 @@ describe("ahpc HTTP normalization", () => {
         "test",
       );
       await expect(client.call("test", {})).rejects.toMatchObject({
-        code: status === 500 ? "adapter_request_failed" : "auth_required",
+        code:
+          status === 500
+            ? "adapter_request_failed"
+            : status === 400
+              ? "backend_authentication_required"
+              : "auth_required",
       });
     },
   );

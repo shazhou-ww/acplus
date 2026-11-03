@@ -30,7 +30,12 @@ export function string(value: unknown): string {
 }
 
 export function localUrl(value: string, protocol: "http:" | "ws:"): URL {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new HubError("invalid_endpoint", 400);
+  }
   if (
     url.protocol !== protocol ||
     !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
@@ -77,7 +82,7 @@ export function redact(value: unknown, secrets: readonly string[]): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
         key,
-        /token|authorization|password|secret/i.test(key)
+        /token|authorization|password|secret|credential|api_?key/i.test(key)
           ? "[redacted]"
           : redact(item, secrets),
       ]),

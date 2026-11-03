@@ -1,64 +1,106 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { start } from "../src/runtime.js";
+import { validateConfig, type HubConfig } from "../src/config.js";
+import type * as Processes from "../src/processes.js";
 
 const state = vi.hoisted(() => ({
-  directory: "",
   root: "",
-  registry: "",
-  released: false,
   failStop: false,
   failAdapter: false,
-  identity: "test",
-  health: undefined as (() => Promise<Record<string, unknown>>) | undefined,
+  adapterFailed: false,
+  unavailable: false,
+  mismatch: false,
+  invalidRegistry: false,
+  registryMissing: false,
+  detail: "",
   processes: [] as {
+    executable: string;
     args: string[];
+    env: NodeJS.ProcessEnv;
+    cwd?: string;
     exit: () => void;
     stop: () => Promise<void>;
+    message?: Record<string, unknown>;
+    check: () => void;
   }[],
+  clients: new Map<string, string>(),
+  turns: new Map<string, unknown>(),
 }));
 
-vi.mock("../src/processes.js", async () => {
-  const { EventEmitter } = await import("node:events");
+vi.mock("../src/processes.js", async (original) => {
+  const actual = await original<typeof Processes>();
+  const { EventEmitter: Emitter } = await import("node:events");
   return {
-    instanceDirectory: (root: string) => {
-      state.root = root;
-      return Promise.resolve({
-        directory: state.directory,
-        release: () => {
-          state.released = true;
-          return Promise.resolve();
-        },
-      });
-    },
-    isolatedEnvironment: () => ({}),
+    ...actual,
     nativeCode: () => Promise.resolve("fixture-executable"),
-    endpointFromRegistry: () => Promise.resolve(state.registry),
-    waitReady: async (_child: unknown, probe: () => Promise<boolean>) => {
+    endpointFromRegistry: async (directory: string) => {
+      if (state.registryMissing) return undefined;
+      const path = join(directory, "entry.json");
+      await writeFile(
+        path,
+        JSON.stringify({
+          schemaVersion: state.invalidRegistry ? 1 : 2,
+          type: "standalone",
+          instanceId: "native-test-instance",
+          endpoint: { type: "tcp", host: "127.0.0.1", port: 43211 },
+        }),
+      );
+      return path;
+    },
+    waitReady: async (
+      child: { check(): void },
+      probe: () => Promise<boolean>,
+    ) => {
       await Promise.resolve();
+      child.check();
       if (!(await probe())) throw new Error("not_ready");
     },
     OwnedProcess: class {
-      readonly child = Object.assign(new EventEmitter(), {
-        send: () => {
-          queueMicrotask(() => {
-            this.child.emit("message", { type: "ready", port: 43210 });
-          });
+      readonly child = Object.assign(new Emitter(), {
+        send: (message: Record<string, unknown>) => {
+          this.record.message = message;
+          const port = 45000 + state.processes.indexOf(this.record);
+          state.clients.set(
+            `http://127.0.0.1:${port}`,
+            String(message.instance),
+          );
+          queueMicrotask(() =>
+            this.child.emit(
+              "message",
+              state.adapterFailed
+                ? { type: "failed" }
+                : { type: "ready", port },
+            ),
+          );
         },
       });
       readonly stop = vi.fn(() => {
-        if (state.failStop) throw new Error("fixture cleanup failure");
+        if (state.failStop)
+          return Promise.reject(new Error("fixture cleanup failure"));
         return Promise.resolve();
       });
+      readonly check = vi.fn();
+      readonly record: (typeof state.processes)[number];
       constructor(
-        _executable: string,
+        executable: string,
         args: string[],
-        _env: unknown,
+        env: NodeJS.ProcessEnv,
         exit: () => void,
+        _ipc: boolean,
+        cwd?: string,
       ) {
-        state.processes.push({ args, exit, stop: this.stop });
+        this.record = {
+          executable,
+          args,
+          env,
+          exit,
+          stop: this.stop,
+          check: this.check,
+          ...(cwd === undefined ? {} : { cwd }),
+        };
+        state.processes.push(this.record);
       }
     },
   };
@@ -66,97 +108,379 @@ vi.mock("../src/processes.js", async () => {
 
 vi.mock("../src/adapter.js", () => ({
   HttpAdapter: class {
-    async call(): Promise<unknown> {
+    constructor(private readonly base: string) {}
+    async call(
+      name: string,
+      input: Record<string, unknown> = {},
+    ): Promise<unknown> {
       await Promise.resolve();
       if (state.failAdapter) throw new Error("fixture adapter failure");
+      const instance = state.clients.get(this.base);
+      if (name === "list_agents") return [{ provider: instance }];
+      if (name === "new_session") return { session: "same:/session" };
+      if (name === "list_sessions") return [];
+      if (name === "hub_start_turn") {
+        state.turns.set(String(instance), input.turnId);
+        return { id: input.turnId };
+      }
+      if (name === "session_history")
+        return {
+          turns: [
+            {
+              id: state.turns.get(String(instance)),
+              state: "complete",
+              text: instance,
+            },
+          ],
+        };
       return {
-        status: "ready",
-        authentication: "required",
-        instance: state.identity,
+        status: state.unavailable ? "unavailable" : "ready",
+        authentication: "backend",
+        instance: state.mismatch ? "different" : instance,
+        detail: state.detail,
       };
     }
   },
 }));
 
-vi.mock("../src/server.js", () => ({
-  serveHub: (
-    _manager: unknown,
-    options: { health: () => Promise<Record<string, unknown>> },
-  ) => {
-    state.health = options.health;
-    return Promise.resolve({
-      url: "http://127.0.0.1:4280",
-      close: () => Promise.resolve(),
-    });
-  },
-}));
-
+let running: Awaited<ReturnType<typeof start>> | undefined;
 beforeEach(async () => {
-  state.directory = await mkdtemp(join(tmpdir(), "ahplex-runtime-test-"));
-  state.registry = join(state.directory, "registry-fixture.json");
-  await writeFile(
-    state.registry,
-    JSON.stringify({
-      schemaVersion: 2,
-      type: "standalone",
-      instanceId: "native-test-instance",
-      endpoint: { type: "tcp", host: "127.0.0.1", port: 43211 },
-    }),
-  );
+  state.root = await mkdtemp(join(process.cwd(), ".test-runtime-"));
   state.processes.length = 0;
-  state.released = false;
-  state.failStop = false;
-  state.failAdapter = false;
-  state.identity = "test";
-  state.health = undefined;
+  state.clients.clear();
+  state.turns.clear();
+  state.detail = "";
+  for (const key of [
+    "failStop",
+    "failAdapter",
+    "adapterFailed",
+    "unavailable",
+    "mismatch",
+    "invalidRegistry",
+    "registryMissing",
+  ] as const)
+    state[key] = false;
 });
-
 afterEach(async () => {
-  await rm(state.directory, { recursive: true, force: true });
+  state.failStop = false;
+  await running?.close().catch(() => {});
+  running = undefined;
+  vi.unstubAllEnvs();
+  await rm(state.root, { recursive: true, force: true });
 });
 
-describe("runtime orchestration (mock subprocess integration, not real Host acceptance)", () => {
-  it("uses explicit independent Host flags, per-run registry, identity, and removes its token", async () => {
-    const running = await start({
-      instance: "test",
-      dataDir: state.directory,
-      port: 0,
+function config(): HubConfig {
+  return validateConfig({
+    version: 1,
+    services: ["one", "two"].map((id, index) => ({
+      id,
+      kind: "ahp-websocket",
+      lifecycle: "attached",
+      startupTimeoutMs: 100,
+      endpoint: { url: `ws://127.0.0.1:${43211 + index}` },
+    })),
+  });
+}
+async function setup(
+  input: Partial<Parameters<typeof start>[0]> = {},
+): Promise<string> {
+  running = await start({
+    instance: "test",
+    dataDir: state.root,
+    port: 0,
+    ...input,
+  });
+  return running.url;
+}
+
+describe("lazy runtime orchestration with mock bridge subprocesses", () => {
+  it("starts no service for hub health/catalogue, deduplicates concurrent selection, isolates IDs", async () => {
+    const url = await setup({ config: config() });
+    expect(await (await fetch(`${url}/health`)).json()).toMatchObject({
+      status: "listening",
+    });
+    expect(await (await fetch(`${url}/services`)).json()).toEqual({
+      services: ["one", "two"],
+    });
+    expect(state.processes).toHaveLength(0);
+    expect((await fetch(`${url}/agents`)).status).toBe(400);
+    expect((await fetch(`${url}/services/missing/agents`)).status).toBe(404);
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => fetch(`${url}/services/one/agents`)),
+    );
+    expect(state.processes).toHaveLength(1);
+    for (const response of responses)
+      expect(await response.json()).toEqual({ agents: [{ provider: "one" }] });
+    expect(await (await fetch(`${url}/services/two/agents`)).json()).toEqual({
+      agents: [{ provider: "two" }],
     });
     expect(state.processes).toHaveLength(2);
-    const args = state.processes[0]?.args ?? [];
-    expect(args).toContain("--new-instance");
-    expect(args).toContain("--foreground");
-    expect(args).not.toContain("--replace");
-    const registryArg = args[args.indexOf("--user-data-dir") + 1];
-    expect(registryArg).toContain(join("runs", ""));
+    expect(state.processes[0]?.message?.instance).toBe("one");
+    expect(state.processes[1]?.message?.instance).toBe("two");
+    const post = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "one",
+        workingDirectory: process.cwd(),
+      }),
+    };
+    expect((await fetch(`${url}/services/one/sessions`, post)).status).toBe(
+      201,
+    );
+    const wrong = await fetch(
+      `${url}/services/two/sessions/same%3A%2Fsession/tasks`,
+      { ...post, body: JSON.stringify({ text: "hello" }) },
+    );
+    expect(wrong.status).toBe(404);
+    expect((await fetch(`${url}/services/two/sessions`, post)).status).toBe(
+      201,
+    );
+    for (const id of ["one", "two"]) {
+      const submitted = await fetch(
+        `${url}/services/${id}/sessions/same%3A%2Fsession/tasks`,
+        {
+          ...post,
+          body: JSON.stringify({ text: "harmless fixture question" }),
+        },
+      );
+      expect(submitted.status).toBe(202);
+      const task = (await submitted.json()) as {
+        taskId: string;
+        turnId: string;
+      };
+      const waited = await fetch(
+        `${url}/services/${id}/tasks/${task.taskId}/wait`,
+      );
+      expect(await waited.json()).toMatchObject({
+        task: {
+          status: "completed",
+          turnId: task.turnId,
+          result: { id: task.turnId, text: id },
+        },
+      });
+      expect(
+        (
+          await fetch(
+            `${url}/services/${id === "one" ? "two" : "one"}/tasks/${task.taskId}`,
+          )
+        ).status,
+      ).toBe(404);
+    }
+    await running?.close();
     expect(
-      await readFile(join(state.directory, "connection-token"), "utf8"),
-    ).toHaveLength(64);
-    expect(await state.health?.()).toMatchObject({
-      instance: "test",
-      host: { owned: true, instanceId: "native-test-instance" },
-    });
-    await running.close();
-    await running.close();
-    expect(state.released).toBe(true);
-    await expect(
-      readFile(join(state.directory, "connection-token")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+      state.processes.every(
+        (child) => vi.mocked(child.stop).mock.calls.length === 1,
+      ),
+    ).toBe(true);
   });
 
-  it("connects only to the explicitly configured existing Host and never owns it", async () => {
-    const running = await start({
-      instance: "test",
+  it("uses explicit legacy flags with persistent profile, inherited identity and fresh private registry", async () => {
+    vi.stubEnv("HOME", "intended-home");
+    vi.stubEnv("VSCODE_CLI_DATA_DIR", "intended-cli-context");
+    vi.stubEnv("GITHUB_TOKEN", "unrelated-secret");
+    const url = await setup({ codePath: "exact-executable" });
+    expect((await fetch(`${url}/services/test/health`)).status).toBe(200);
+    const child = state.processes[0];
+    expect(child?.executable).toBe("exact-executable");
+    expect(child?.args).toContain("--new-instance");
+    expect(child?.args).toContain("--foreground");
+    expect(child?.args).not.toContain("--replace");
+    expect(child?.env.HOME).toBe("intended-home");
+    expect(child?.env.VSCODE_CLI_DATA_DIR).toBe("intended-cli-context");
+    expect(child?.args).not.toContain("--cli-data-dir");
+    expect(child?.env.GITHUB_TOKEN).toBeUndefined();
+    expect(child?.cwd).toBe(process.cwd());
+    const dir = join(state.root, "test", "services", "test");
+    expect(await readFile(join(dir, "connection-token"), "utf8")).toHaveLength(
+      64,
+    );
+    expect(
+      await (await fetch(`${url}/services/test/health`)).json(),
+    ).toMatchObject({
+      host: { owned: true, instanceId: "native-test-instance" },
+    });
+    const marker = join(dir, "profile", "identity-marker");
+    await writeFile(marker, "preserve");
+    await running?.close();
+    await running?.close();
+    expect(await readFile(marker, "utf8")).toBe("preserve");
+    await expect(readFile(join(dir, "connection-token"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+  });
+
+  it("expands exact launch arguments/environment without a shell or forwarding ambient credentials", async () => {
+    vi.stubEnv("NATIVE_SERVICE_CONTEXT", "explicit-context");
+    vi.stubEnv("NATIVE_SERVICE_TOKEN", "fixture-native-secret");
+    state.detail = "fixture-native-secret";
+    const service = config().services[0];
+    if (service === undefined) throw new Error("missing fixture");
+    service.lifecycle = "owned";
+    service.endpoint = { registry: true };
+    service.launch = {
+      executable: "fixture-path",
+      args: ["space argument", "$(not a shell)", "{connectionTokenFile}"],
+      cwd: state.root,
+      environment: {
+        mode: "isolated",
+        inherit: ["NATIVE_SERVICE_CONTEXT", "NATIVE_SERVICE_TOKEN"],
+        values: { PROFILE: "{profileDirectory}", EMPTY: "" },
+      },
+    };
+    const url = await setup({ config: { version: 1, services: [service] } });
+    expect((await fetch(`${url}/services/one/health`)).status).toBe(200);
+    const child = state.processes[0];
+    expect(child?.args.slice(0, 2)).toEqual([
+      "space argument",
+      "$(not a shell)",
+    ]);
+    expect(child?.env.NATIVE_SERVICE_CONTEXT).toBe("explicit-context");
+    expect(child?.env.NATIVE_SERVICE_TOKEN).toBe("fixture-native-secret");
+    expect(child?.env.PROFILE).toBe(child?.env.HOME);
+    expect(child?.env.EMPTY).toBe("");
+    expect(child?.cwd).toBe(state.root);
+    expect(child?.env.HOME).toContain(join("services", "one", "profile"));
+    expect(
+      await (await fetch(`${url}/services/one/health`)).json(),
+    ).toHaveProperty("detail", "[redacted]");
+  });
+
+  it("attaches only to an explicit endpoint and never launches or owns that Host", async () => {
+    const url = await setup({
       hostUrl: "ws://127.0.0.1:43211",
       hostToken: "fixture",
     });
+    expect((await fetch(`${url}/services/test/health`)).status).toBe(200);
     expect(state.processes).toHaveLength(1);
-    expect(state.root).toBe(join(homedir(), ".ahplex"));
-    expect(await state.health?.()).toMatchObject({ host: { owned: false } });
-    await running.close();
+    expect(state.processes[0]?.message?.connectionToken).toBe("fixture");
+    expect(
+      await (await fetch(`${url}/services/test/health`)).json(),
+    ).toMatchObject({ host: { owned: false } });
   });
 
-  it("rejects incomplete credentials and remote URLs before starting anything", async () => {
+  it.each([
+    "invalidRegistry",
+    "registryMissing",
+    "adapterFailed",
+    "mismatch",
+    "unavailable",
+  ] as const)(
+    "does not report service readiness when %s and cleans failed starts",
+    async (key) => {
+      state[key] = true;
+      const url = await setup();
+      expect(
+        (await fetch(`${url}/services/test/health`)).status,
+      ).toBeGreaterThanOrEqual(500);
+      const count = state.processes.length;
+      expect(
+        (await fetch(`${url}/services/test/health`)).status,
+      ).toBeGreaterThanOrEqual(500);
+      expect(state.processes).toHaveLength(count);
+      expect(
+        state.processes.every(
+          (child) => vi.mocked(child.stop).mock.calls.length === 1,
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("observes process exit and adapter loss without stale readiness", async () => {
+    const url = await setup();
+    await fetch(`${url}/services/test/health`);
+    state.processes[0]?.exit();
+    expect(
+      await (await fetch(`${url}/services/test/health`)).json(),
+    ).toMatchObject({
+      status: "unavailable",
+      error: "child_exited",
+    });
+    await running?.close();
+    running = undefined;
+    const second = await setup({ config: config() });
+    await fetch(`${second}/services/one/health`);
+    state.failAdapter = true;
+    expect(
+      await (await fetch(`${second}/services/one/health`)).json(),
+    ).toMatchObject({
+      status: "unavailable",
+      error: "adapter_unavailable",
+    });
+  });
+
+  it("requires explicit connection-token and environment references", async () => {
+    const input = config();
+    input.services[0]!.endpoint = {
+      url: "ws://127.0.0.1:43211",
+      tokenEnv: "MISSING_AHPLEX_TEST_TOKEN",
+    };
+    const url = await setup({ config: input });
+    const response = await fetch(`${url}/services/one/health`);
+    expect(await response.json()).toMatchObject({
+      error: { code: "connection_token_environment_missing" },
+    });
+    expect(state.processes).toHaveLength(0);
+  });
+
+  it("resolves only the selected attachment's explicit transport token reference", async () => {
+    vi.stubEnv("AHPLEX_TEST_TRANSPORT_TOKEN", "fixture-transport-secret");
+    state.detail = "fixture-transport-secret";
+    const input = config();
+    input.services[0]!.endpoint = {
+      url: "ws://127.0.0.1:43211",
+      tokenEnv: "AHPLEX_TEST_TRANSPORT_TOKEN",
+    };
+    const url = await setup({ config: input });
+    const response = await fetch(`${url}/services/one/health`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toHaveProperty("detail", "[redacted]");
+    expect(state.processes[0]?.message?.connectionToken).toBe(
+      "fixture-transport-secret",
+    );
+  });
+
+  it("cleans failed startup when an explicitly inherited context variable is missing", async () => {
+    const service = config().services[0]!;
+    service.lifecycle = "owned";
+    service.endpoint = { registry: true };
+    service.launch = {
+      executable: "fixture",
+      args: [],
+      cwd: state.root,
+      environment: {
+        mode: "inherited",
+        inherit: ["MISSING_AHPLEX_TEST_ENVIRONMENT"],
+        values: {},
+      },
+    };
+    const url = await setup({ config: { version: 1, services: [service] } });
+    expect(
+      await (await fetch(`${url}/services/one/health`)).json(),
+    ).toMatchObject({
+      error: { code: "configured_environment_variable_missing" },
+    });
+    expect(state.processes).toHaveLength(0);
+    await expect(
+      readFile(join(state.root, "test", "services", "one", "owner.lock")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retains ownership locks if cleanup fails", async () => {
+    const url = await setup();
+    await fetch(`${url}/services/test/health`);
+    state.failStop = true;
+    await expect(running?.close()).rejects.toThrow(
+      "cleanup_failed_lock_retained",
+    );
+    expect(await readFile(join(state.root, "test", "owner.lock"), "utf8")).toBe(
+      String(process.pid),
+    );
+    // The test owns this socket, but production must retain locks on failure.
+    state.failStop = false;
+  });
+
+  it("rejects cancellation, conflicting options and invalid legacy configuration", async () => {
     const abort = new AbortController();
     abort.abort();
     await expect(
@@ -166,63 +490,24 @@ describe("runtime orchestration (mock subprocess integration, not real Host acce
       start({ instance: "test", authToken: "fixture" }),
     ).rejects.toThrow("auth_resource_and_token_required_together");
     await expect(
-      start({ instance: "test", hostUrl: "ws://example.com:1234" }),
-    ).rejects.toThrow("explicit_loopback_endpoint_required");
+      start({ instance: "test", config: config(), codePath: "x" }),
+    ).rejects.toThrow("configuration_legacy_options_conflict");
+    const url = await setup({ hostUrl: "ws://example.com:1234" });
+    expect((await fetch(`${url}/services/test/health`)).status).toBe(400);
     expect(state.processes).toHaveLength(0);
   });
 
-  it("rejects unexpected native registry contracts and cleans up startup failures", async () => {
-    await writeFile(
-      state.registry,
-      JSON.stringify({
-        schemaVersion: 1,
-        endpoint: { type: "tcp", host: "127.0.0.1", port: 43211 },
-      }),
-    );
-    await expect(start({ instance: "test" })).rejects.toThrow(
-      "unsupported_host_registry",
-    );
-    expect(state.released).toBe(true);
-    expect(state.processes).toHaveLength(1);
-  });
-
-  it("fails closed on adapter identity mismatch", async () => {
-    state.identity = "different-instance";
+  it("releases the hub lock on HTTP listener startup failure", async () => {
+    const first = await setup();
     await expect(
-      start({ instance: "test", hostUrl: "ws://127.0.0.1:43211" }),
-    ).rejects.toThrow("adapter_identity_mismatch");
-    expect(state.released).toBe(true);
-  });
-
-  it("marks health unavailable and stops owned processes after unexpected exit", async () => {
-    const running = await start({ instance: "test" });
-    state.processes[0]?.exit();
-    expect(await state.health?.()).toMatchObject({
-      status: "unavailable",
-      error: "child_exited",
-    });
-    await running.close();
-  });
-
-  it("reports lost adapter connectivity rather than stale health", async () => {
-    const running = await start({
-      instance: "test",
-      hostUrl: "ws://127.0.0.1:43211",
-    });
-    state.failAdapter = true;
-    expect(await state.health?.()).toMatchObject({
-      status: "unavailable",
-      error: "adapter_unavailable",
-    });
-    await running.close();
-  });
-
-  it("retains the lock when owned process cleanup fails", async () => {
-    const running = await start({ instance: "test" });
-    state.failStop = true;
-    await expect(running.close()).rejects.toThrow(
-      "cleanup_failed_lock_retained",
-    );
-    expect(state.released).toBe(false);
+      start({
+        instance: "other",
+        dataDir: state.root,
+        port: Number(new URL(first).port),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      readFile(join(state.root, "other", "owner.lock")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

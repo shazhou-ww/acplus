@@ -1,7 +1,6 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   endpointFromRegistry,
   instanceDirectory,
@@ -17,7 +16,7 @@ afterEach(async () => {
 });
 
 async function directory(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "ahplex-test-"));
+  const dir = await mkdtemp(join(process.cwd(), ".test-processes-"));
   cleanup.push(() => rm(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -108,9 +107,12 @@ describe("owned process lifecycle", () => {
       },
     );
     cleanup.push(() => child.stop());
-    await vi.waitFor(() => {
-      expect(exited).toBe(true);
+    await new Promise<void>((resolve) => {
+      child.child.once("exit", () => {
+        resolve();
+      });
     });
+    expect(exited).toBe(true);
   });
 
   it("locks instances, rejects traversal and removes the lock on graceful close", async () => {

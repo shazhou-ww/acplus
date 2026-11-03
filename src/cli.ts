@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { HubError, publicError } from "./common.js";
 import { start, type StartOptions } from "./runtime.js";
+import { loadConfig } from "./config.js";
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const { values } = parseArgs({
@@ -11,6 +12,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     options: {
       help: { type: "boolean", short: "h" },
       instance: { type: "string" },
+      config: { type: "string" },
       "data-dir": { type: "string" },
       port: { type: "string" },
       "code-path": { type: "string" },
@@ -19,7 +21,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   });
   if (values.help === true) {
     process.stdout.write(
-      "ahplex --instance NAME [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nCredentials: AHPLEX_API_TOKEN, AHPLEX_HOST_TOKEN, AHPLEX_AUTH_RESOURCE + AHPLEX_AUTH_TOKEN\n",
+      "ahplex --instance NAME [--config FILE] [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nSelect a service using /services/ID/...; services start on demand.\nTransport: AHPLEX_API_TOKEN, AHPLEX_HOST_TOKEN (legacy attachment only).\nLegacy optional AHPLEX_AUTH_RESOURCE + AHPLEX_AUTH_TOKEN deliver an explicitly supplied credential; they are not a provider login prerequisite.\n",
     );
     return;
   }
@@ -31,6 +33,9 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const options: StartOptions = {
     instance: values.instance,
     port,
+    ...(values.config === undefined
+      ? {}
+      : { config: await loadConfig(values.config) }),
     ...(values["data-dir"] === undefined
       ? {}
       : { dataDir: values["data-dir"] }),

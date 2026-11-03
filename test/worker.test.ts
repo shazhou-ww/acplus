@@ -92,7 +92,7 @@ const config = {
 };
 
 describe("ahpc worker integration with explicit test HostConnection", () => {
-  it("reports missing credentials explicitly and refuses creation or execution", async () => {
+  it("forwards creation and execution without an ahplex provider credential gate", async () => {
     await runAdapter(config);
     expect(liveHost).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "ahplex-test" }),
@@ -102,19 +102,25 @@ describe("ahpc worker integration with explicit test HostConnection", () => {
       expect.objectContaining({ name: "ahplex" }),
     );
     expect(await tool("hub_status").run(host, {})).toMatchObject({
-      authentication: "required",
+      authentication: "backend",
       instance: "test",
     });
+    const create = vi.spyOn(host, "createSession").mockResolvedValue("test:/1");
     await expect(
-      tool("new_session").run(host, { provider: "test" }),
-    ).rejects.toThrow("auth_required");
+      tool("new_session").run(host, {
+        provider: "test",
+        workingDirectory: process.cwd(),
+      }),
+    ).resolves.toMatchObject({ session: "test:/1" });
+    expect(create).toHaveBeenCalled();
     await expect(
       tool("hub_start_turn").run(host, {
         session: "test:/1",
         text: "a",
         turnId: "one",
       }),
-    ).rejects.toThrow("auth_required");
+    ).resolves.toEqual({ id: "one" });
+    expect(authenticate).not.toHaveBeenCalled();
   });
 
   it("authenticates only the supplied resource and starts the caller's exact turn ID", async () => {
@@ -146,6 +152,9 @@ describe("ahpc worker integration with explicit test HostConnection", () => {
     expect(await tool("hub_status").run(host, {})).toMatchObject({
       authentication: "required",
     });
+    options?.onAuthRequired?.([], "expired");
+    await options?.onConnected?.(host);
+    expect(authenticate).toHaveBeenCalledOnce();
   });
 
   it("refuses busy, silent, refused and offline sessions without sending another turn", async () => {
@@ -185,7 +194,7 @@ describe("ahpc worker integration with explicit test HostConnection", () => {
     });
     options?.onRefusal?.("test:/1", "fixture refusal");
     await expect(tool("hub_start_turn").run(host, input)).rejects.toThrow(
-      "session_unavailable",
+      "session_refused",
     );
     await expect(tool("session_history").run(host, input)).rejects.toThrow(
       "session_refused",
@@ -213,5 +222,78 @@ describe("ahpc worker integration with explicit test HostConnection", () => {
     expect(await tool("hub_status").run(host, {})).toMatchObject({
       authentication: "required",
     });
+  });
+
+  it("reports native backend auth requirements without leaking backend error text", async () => {
+    await runAdapter(config);
+    vi.spyOn(host, "createSession").mockRejectedValue(
+      Object.assign(new Error("backend secret must not escape"), {
+        code: -32007,
+        data: { resources: [{ resource: "https://resource.example" }] },
+      }),
+    );
+    await expect(
+      tool("new_session").run(host, { provider: "test" }),
+    ).rejects.toThrow("backend_authentication_required");
+    expect(await tool("hub_status").run(host, {})).toMatchObject({
+      authentication: "required",
+    });
+    expect(await tool("hub_status").run(host, {})).toHaveProperty(
+      "action",
+      expect.stringContaining("native authorization"),
+    );
+    options?.onRefusal?.("test:/auth", "Backend token refused (-32007)");
+    await expect(
+      tool("session_history").run(host, { session: "test:/auth" }),
+    ).rejects.toThrow("backend_authentication_required");
+    vi.spyOn(host, "createSession").mockResolvedValue("test:/recovered");
+    await expect(
+      tool("new_session").run(host, { provider: "test" }),
+    ).resolves.toEqual({ session: "test:/recovered" });
+  });
+
+  it("normalizes unexpected backend failures and checks connectivity for cancellation", async () => {
+    await runAdapter(config);
+    vi.spyOn(host, "createSession").mockRejectedValue(
+      new Error("provider secret"),
+    );
+    await expect(
+      tool("new_session").run(host, { provider: "test" }),
+    ).rejects.toThrow("backend_request_failed");
+    vi.spyOn(host, "createSession").mockRejectedValue(
+      Object.assign(new Error("unsupported secret text"), { code: -32601 }),
+    );
+    await expect(
+      tool("new_session").run(host, { provider: "test" }),
+    ).rejects.toThrow("backend_capability_unsupported");
+    vi.spyOn(host, "state").mockReturnValue("offline");
+    await expect(
+      tool("hub_cancel_turn").run(host, {
+        session: "test:/1",
+        turnId: "one",
+      }),
+    ).rejects.toThrow("host_unavailable");
+    await expect(tool("list_agents").run(host, {})).rejects.toThrow(
+      "host_unavailable",
+    );
+  });
+
+  it("does not require the optional upstream credential-delivery capability", async () => {
+    delete host.authenticate;
+    await runAdapter({
+      ...config,
+      authResource: "https://resource.example",
+      authToken: "fixture",
+    });
+    expect(await tool("hub_status").run(host, {})).toMatchObject({
+      authentication: "required",
+    });
+    const say = vi.spyOn(host, "say").mockImplementation(() => {});
+    await tool("hub_start_turn").run(host, {
+      session: "test:/1",
+      text: "hello",
+      turnId: "one",
+    });
+    expect(say).toHaveBeenCalled();
   });
 });

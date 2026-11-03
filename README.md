@@ -1,252 +1,361 @@
 # ahplex
 
-A lightweight, loopback-only HTTP service for sessions and correlated tasks on
-an **independent VS Code Agent Host**, using one long-lived ahpc HTTP adapter.
-No Web UI, editor-host discovery, implicit credential discovery, npm publishing,
-or release tagging.
+A loopback-only HTTP session/task manager for **explicitly configured agent
+services**. Services start on demand and each uses one long-lived ahpc bridge
+connection. Provider accounts, model access, login and renewal belong to the
+selected service/provider, not ahplex.
 
 ## Requirements and development
 
-- Node.js >=22.13, pnpm >=11.22.
-- VS Code with `code agent host --new-instance --foreground` support. The
-  endpoint-registry contract currently targets VS Code 1.144.1 (schema 2).
-- An agent provider and an explicitly supplied resource credential for
-  execution.
+- Node.js >=22.13 and pnpm >=11.22.
+- An actual supported service endpoint (see the capability matrix below).
 
 ```powershell
 pnpm install
 pnpm check
-pnpm pack
+pnpm build
 node .\dist\cli.js --help
-node .\dist\cli.js --instance demo
-# Installed package: ahplex --instance demo
+node .\dist\cli.js --instance local --config .\services.json
+# Installed package: ahplex --instance local --config .\services.json
 ```
 
-Default HTTP address: `http://127.0.0.1:4280`. `--port 0` selects a free port.
-Host and adapter always use separate ephemeral loopback ports; no use of the old
-experiment's ports 9189 or 7432. On Windows, the default executable is the
-native `code-tunnel.exe` beside `code.cmd` on PATH; override with
-`--code-path 'C:\...\bin\code-tunnel.exe'`. Shell command strings are not
-accepted.
+Default HTTP address: `http://127.0.0.1:4280`; `--port 0` selects a free port.
+Merely starting ahplex or declaring services does not start any backend.
+`GET /health` reports the HTTP listener, **not backend readiness**.
+`GET /services` lists configured IDs without starting them.
 
-The service owns a lock in `~/.ahplex/<instance>/`, isolated server and CLI
-data, and a fresh endpoint registry for each run. Customize the root with
-`--data-dir`. It launches with `--new-instance --foreground`, never `--replace`,
-never reads the editor's registry, and never invokes a CLI per API request.
-Instance names are mandatory and limited to letters, digits, `_`, and `-`.
+## Service configuration
 
-### Renaming an existing installation
+The JSON schema is versioned and strict: unknown fields, duplicate
+IDs/endpoints, unsupported bridge kinds and invalid launch/endpoint/lifecycle
+combinations fail explicitly. Service IDs and `--instance` use 1–64 letters,
+digits, `_` or `-`, starting with a letter/digit. Paths in launch context must
+match the host OS.
 
-The package and executable are now `ahplex`, credential variables use
-`AHPLEX_*`, and the default data root is `~/.ahplex`. Update launch commands and
-explicit credential injection accordingly. Former environment variables and data
-roots are not automatically read or migrated. To intentionally reuse existing
-instance data, pass its former root through `--data-dir`; do not copy
-credentials from another Host. HTTP routes and task/session response shapes are
-unchanged.
+Example `services.json` (replace the executable path and working directories).
+This launches two independent schema-2 VS Code Agent Hosts, lazily:
 
-### Real Host acceptance
-
-`pnpm check` passes all 65 tests and the template's unchanged 90% coverage
-thresholds, including format, lint, strict typecheck, build, and package-shape
-validation. `pnpm pack`, an independent tarball installation, the installed
-CLI's help/startup/shutdown, and frozen-lockfile installation have also been
-verified.
-
-A fresh VS Code 1.144.1 standalone Host and the actual ahpc 0.9.0 adapter have
-been verified together: health, providers, empty session catalogue, explicit 401
-on session creation without authentication, explicit attachment without
-owning/stopping that Host, and owned-process cleanup. No authenticated agent
-task has yet been verified because no dedicated provider credential was
-supplied. Test fixtures never count as a real Host acceptance run. To run a real
-program task, explicitly provision authentication below, submit the task, wait
-for that exact task ID, then independently run the generated program and tests
-from its working directory.
-
-## Authentication
-
-Three different credentials have different purposes:
-
-1. The managed Host receives a freshly generated connection token through a
-   private token file. This is unrelated to provider login; it is removed on
-   shutdown and never printed.
-2. The private ahpc HTTP adapter receives an independent random bearer token
-   over IPC.
-3. Agent provider authentication must be explicitly supplied:
-
-   ```powershell
-   # Supply these through your approved secret-injection mechanism:
-   $env:AHPLEX_AUTH_RESOURCE = '<resource advertised by /health>'
-   # AHPLEX_AUTH_TOKEN: a credential intentionally provisioned for this Host
-   # AHPLEX_API_TOKEN: optional bearer credential protecting the public API
-   ahplex --instance demo
-   ```
-
-Without a provider credential, `/health` reports `authentication: "required"`
-and advertises protected `resources`. Creating a session or executing a task is
-refused with `auth_required`; authentication does not fall back to another
-account. Invalid or expired credentials also report required. The service does
-not initiate device login or copy login state from VS Code, gh, Copilot, ahpc
-config, or the experiment. Restart with an explicitly provisioned credential
-after login.
-
-Child processes receive an allowlisted environment and private HOME, APPDATA,
-XDG, VS Code CLI/server, and temporary directories. Ambient provider tokens,
-ahpc recording/config environment, editor IPC, and `NODE_OPTIONS` are excluded.
-Credentials are not written to logs or task-result files. Known configured
-credentials and credential-named properties are redacted from public responses.
-Do not include unrelated secrets in prompts: arbitrary agent-generated prose
-cannot be universally recognized as sensitive.
-
-All API routes, including health, require `Authorization: Bearer ...` when
-`AHPLEX_API_TOKEN` is configured. Without it, native programs running locally
-can control this service. Browser Origin headers and unexpected Host headers are
-rejected; there is no CORS support.
-
-### Explicitly configured existing Host
-
-```powershell
-# Optional AHPLEX_HOST_TOKEN is supplied through the environment.
-ahplex --instance attached --host-url ws://127.0.0.1:45678
+```json
+{
+  "version": 1,
+  "services": [
+    {
+      "id": "primary",
+      "kind": "ahp-websocket",
+      "lifecycle": "owned",
+      "startupTimeoutMs": 60000,
+      "endpoint": { "registry": true },
+      "launch": {
+        "executable": "C:\\Users\\you\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code-tunnel.exe",
+        "args": [
+          "--log",
+          "off",
+          "agent",
+          "host",
+          "--new-instance",
+          "--foreground",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "0",
+          "--user-data-dir",
+          "{registryDirectory}\\user-data",
+          "--server-data-dir",
+          "{profileDirectory}\\server-data",
+          "--connection-token-file",
+          "{connectionTokenFile}"
+        ],
+        "cwd": "D:\\work\\primary",
+        "environment": {
+          "mode": "inherited",
+          "inherit": [],
+          "values": {}
+        }
+      }
+    },
+    {
+      "id": "secondary",
+      "kind": "ahp-websocket",
+      "lifecycle": "owned",
+      "startupTimeoutMs": 60000,
+      "endpoint": { "registry": true },
+      "launch": {
+        "executable": "C:\\Users\\you\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code-tunnel.exe",
+        "args": [
+          "--log",
+          "off",
+          "agent",
+          "host",
+          "--new-instance",
+          "--foreground",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "0",
+          "--user-data-dir",
+          "{registryDirectory}\\user-data",
+          "--server-data-dir",
+          "{profileDirectory}\\server-data",
+          "--connection-token-file",
+          "{connectionTokenFile}"
+        ],
+        "cwd": "D:\\work\\secondary",
+        "environment": {
+          "mode": "isolated",
+          "inherit": [],
+          "values": {}
+        }
+      }
+    }
+  ]
+}
 ```
 
-The URL must be an explicit loopback WebSocket endpoint without credentials,
-query, or fragment. No default endpoint detection is performed. This Host is
-**not owned** and will not be stopped. Its data isolation and exclusive access
-are the operator's responsibility; do not point this at your editor Host.
-Resource credentials remain explicitly required even if that Host has another
-user signed in.
+`launch.executable` and `launch.args` are passed to `spawn` without a shell;
+argument boundaries, spaces and shell-looking text are preserved. Use a native
+executable, not `code.cmd` or a shell command string. `cwd` is an explicit
+absolute working directory. Arguments are service/provider inputs; ahplex does
+not reinterpret provider flags. `startupTimeoutMs` is 1–300000 ms per startup
+stage. Missing executables, early exits, unsupported registry entries, bridge
+failure and readiness timeouts are failures, never successful service health.
+
+Only these literal substitutions are supported in executable/arguments and
+environment values:
+
+- `{registryDirectory}`: a fresh private per-run directory; the launched service
+  must write schema-2 endpoint entries under its `user-data` directory.
+- `{profileDirectory}`: a persistent, service-specific profile directory.
+- `{connectionTokenFile}`: ahplex's private generated **transport** token file.
+
+The working directory is not substituted. Unknown brace placeholders fail
+validation. Ahplex neither adds launcher flags to explicit configuration nor
+chooses another executable, endpoint, account or profile as a fallback.
+
+### Identity context
+
+`environment.mode` is required:
+
+- `inherited` preserves the calling account's HOME/USERPROFILE, APPDATA,
+  LOCALAPPDATA, XDG config/data/cache and explicit VS Code CLI/server data
+  variables. It does **not** copy token stores or guarantee this provider
+  supports persistent native login.
+- `isolated` sets those paths to the service's **persistent** profile. A fresh
+  profile normally has no login; ahplex does not pretend otherwise. Shutdown
+  never deletes this profile or its native identity data.
+
+Both modes retain only basic executable/OS search context by default, not the
+entire ambient environment. `environment.inherit` explicitly names additional
+environment variables to pass; a missing named variable is an error.
+`environment.values` sets explicit string overrides (including empty strings).
+Use these for service-owned context, not a new ahplex authentication policy.
+Keep secrets outside checked-in files and use approved native provisioning. The
+bridge worker itself always has a restricted environment: editor IPC, ambient
+provider tokens, `NODE_OPTIONS`, and ahpc wire-recording settings are not
+implicitly inherited.
+
+### Explicit attachment
+
+An attached service has no `launch` and is never stopped by ahplex:
+
+```json
+{
+  "version": 1,
+  "services": [
+    {
+      "id": "external",
+      "kind": "ahp-websocket",
+      "lifecycle": "attached",
+      "startupTimeoutMs": 60000,
+      "endpoint": {
+        "url": "ws://127.0.0.1:45678",
+        "tokenEnv": "MY_SERVICE_CONNECTION_TOKEN"
+      }
+    }
+  ]
+}
+```
+
+Omit `tokenEnv` only when that endpoint needs no connection token. A configured
+reference must resolve to a nonempty environment variable; its value is not
+stored in configuration. URLs must be explicit loopback WebSocket root
+endpoints, without URL credentials, query or fragment. No editor registry,
+arbitrary signed-in Host discovery or credential transfer occurs. Access
+exclusivity and native service authorization are the operator's responsibility.
+Authentication performed by another AHP client is not necessarily shared with
+this connection.
+
+### Actual supported protocols and authorization
+
+| Service/transport                                                                         | Support                                                                              |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| AHP WebSocket compatible with `@softov/ahpc` 0.9.0 / `@microsoft/agent-host-protocol` 1.0 | Supported bridge protocol, configured as `ahp-websocket`                             |
+| Owned VS Code standalone Host, private schema-2 TCP registry                              | Supported discovery contract; VS Code 1.144.1 was the original verified version      |
+| Explicit existing loopback AHP WebSocket endpoint                                         | Supported attachment; never owned                                                    |
+| Owned fixed URL, ACP/stdio, arbitrary executable protocols, OpenAI HTTP                   | Not supported; separate adapters would be needed                                     |
+| `ahpd` executable                                                                         | Not required or launched; this package embeds ahpc's live AHP client and HTTP bridge |
+| Interactive OAuth/device login, tool approvals or token acquisition relay                 | Not implemented by this HTTP bridge                                                  |
+
+There is **no ahplex provider login prerequisite** or synthetic
+`authentication: configured` flag. Operations reach the selected backend even
+when ahplex has no provider token. Service health reports
+`authentication: "backend"` (authorization delegated, **not proof of login**) or
+`"required"` after an observed backend challenge. Transport readiness is not
+successful authorized execution.
+
+AHP may require a client to acquire a resource token and deliver it using
+`authenticate`; `auth/required` and JSON-RPC `-32007` identify such
+requirements. Tokens may be scoped to an AHP connection and expiry requires the
+provider's native renewal flow. This bridge does not acquire tokens, drive
+browsers or silently reuse an expired token. A persisted native provider context
+is usable only if that provider actually honors it for this independently
+started Host. An editor window being signed in proves nothing about a new Host.
+
+Backend authentication failures return `backend_authentication_required` and
+service health names the native authorization action. If the combination
+requires unsupported client interaction, use its supported native client or
+provision an explicitly supported service context; do not mine editor
+credentials. Unknown backend messages are replaced with safe error codes.
+
+`pnpm check` supplies automated contract evidence, **not** a real authorized
+agent execution. A successful harmless real question, exact task correlation, an
+independent unauthenticated/expired case and process/profile preservation are
+external deployment checks. No authenticated execution is claimed here.
+
+### Existing CLI options and compatibility
+
+Without `--config`, `--instance NAME` declares a single lazy service with ID
+`NAME`, using the native `code-tunnel.exe` on Windows (`code` elsewhere).
+`--code-path` overrides that executable; `--host-url` instead explicitly
+attaches. `AHPLEX_HOST_TOKEN` supplies the legacy connection token. The default
+launcher uses `--new-instance --foreground`, a fresh private registry,
+persistent service profile and **inherited identity context**, not a new
+identity HOME.
+
+Legacy optional `AHPLEX_AUTH_RESOURCE` + `AHPLEX_AUTH_TOKEN` still explicitly
+deliver a caller-provisioned AHP credential, together, on connection; they are
+never required before forwarding operations and are not an OAuth implementation.
+Expired credentials are not automatically replayed on an authentication
+challenge. Do not copy credentials from an editor. With `--config`, legacy
+`--code-path`, `--host-url`, host/provider credential variables and programmatic
+`startupTimeoutMs` are rejected rather than silently ignored.
+
+`--data-dir` still changes the default `~/.ahplex` root. `--instance` now names
+the hub namespace: locks, service profiles, private registries and bridges live
+under `<root>/<instance>/services/<service-id>/`. Older data directories are not
+automatically imported or deleted. `AHPLEX_API_TOKEN` remains optional local
+HTTP access protection, distinct from provider authorization.
+
+**HTTP migration:** all backend routes now require `/services/<id>` even in
+single-service mode; unscoped backend requests fail `explicit_service_required`.
+CLI startup means the HTTP listener is available, not that a service has
+started. Old package/credential prefixes and old data roots are not
+automatically read.
 
 ## HTTP API
 
-JSON resources are not MCP tool envelopes. URL-encode opaque `sessionId` values
-(they are usually provider URIs), not just the provider's UUID.
+All routes bind to loopback. Browser Origin headers and unexpected Host headers
+are rejected, without CORS. When `AHPLEX_API_TOKEN` is configured, every route
+requires its bearer Authorization header. Otherwise local native programs may
+control the service. Known supplied secrets and credential-named properties are
+redacted from responses; arbitrary secret text in prompts cannot be recognized
+universally.
 
-| Method | Route                                 | Meaning                                               |
-| ------ | ------------------------------------- | ----------------------------------------------------- |
-| GET    | `/health`                             | Live adapter/Host readiness, instance and auth status |
-| GET    | `/agents`                             | Providers and models advertised by the Host           |
-| GET    | `/sessions`                           | Known created sessions union the Host catalogue       |
-| POST   | `/sessions`                           | Create `{provider, workingDirectory}`; return 201     |
-| POST   | `/sessions/:sessionId/tasks`          | Submit `{text}`; return 202 with taskId               |
-| GET    | `/tasks/:taskId`                      | Snapshot of that exact task                           |
-| GET    | `/tasks/:taskId/wait?timeoutMs=30000` | Wait for that exact task                              |
-| POST   | `/tasks/:taskId/cancel`               | Request cancellation; return 202                      |
-
-PowerShell example (add an Authorization header if configured):
+| Method   | Route                                              | Meaning                                                                     |
+| -------- | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| GET      | `/health`                                          | Listener only; starts nothing                                               |
+| GET      | `/services`                                        | Configured IDs; starts nothing                                              |
+| GET      | `/services/:id/health`                             | Start/select service; actual bridge readiness and backend auth observations |
+| GET      | `/services/:id/agents`                             | Backend providers/models                                                    |
+| GET/POST | `/services/:id/sessions`                           | Catalogue or create `{provider, workingDirectory}`                          |
+| POST     | `/services/:id/sessions/:sessionId/tasks`          | Submit `{text}`; 202 with taskId                                            |
+| GET      | `/services/:id/tasks/:taskId`                      | That service's exact task                                                   |
+| GET      | `/services/:id/tasks/:taskId/wait?timeoutMs=30000` | Bounded correlated wait                                                     |
+| POST     | `/services/:id/tasks/:taskId/cancel`               | Request correlated cancellation                                             |
 
 ```powershell
-$base = 'http://127.0.0.1:4280'
+$base = 'http://127.0.0.1:4280/services/primary'
 Invoke-RestMethod "$base/health"
 Invoke-RestMethod "$base/agents"
 $session = Invoke-RestMethod "$base/sessions" -Method Post `
   -ContentType 'application/json' `
-  -Body (@{ provider = 'copilotcli'; workingDirectory = 'D:\work\demo' } |
+  -Body (@{ provider = 'copilotcli'; workingDirectory = 'D:\work\primary' } |
     ConvertTo-Json)
 $id = [uri]::EscapeDataString($session.sessionId)
 $task = Invoke-RestMethod "$base/sessions/$id/tasks" -Method Post `
   -ContentType 'application/json' `
-  -Body (@{ text = 'Write a small Python temperature converter and test it.' } |
+  -Body (@{ text = 'Reply with a short greeting. Do not change any files.' } |
     ConvertTo-Json)
-Invoke-RestMethod "$base/tasks/$($task.taskId)"
 Invoke-RestMethod "$base/tasks/$($task.taskId)/wait?timeoutMs=30000"
-Invoke-RestMethod "$base/tasks/$($task.taskId)/cancel" -Method Post
 ```
 
-### Session and task semantics
+Service startup is deduplicated across concurrent requests. Different services
+have different locks, bridges, task managers and sessions, even if opaque
+backend session IDs coincide. Failed starts are latched until hub restart: no
+retry storm or silent fallback. A service ID is always part of a resource's
+identity; use the same service prefix for creation, submission, polling and
+cancellation. URL-encode opaque session IDs, which are commonly provider URIs.
 
-- A created empty session is retained in the service's known-session registry
-  even when absent from the Host catalogue before its first turn. `hostVisible`
-  means **present in the latest catalogue**, not existence or task success.
-  `running` describes current activity, independently of existence. Call list or
-  create before submitting to a session.
-- Task states: `queued`, `running`, `completed`, `failed`, `cancelled`.
-  Submissions in a session are serialized; separate sessions can execute
-  concurrently. `running` starts at dispatch, not at a provider acknowledgement.
-- Each task has its own `taskId`, `sessionId`, and caller-assigned `turnId`.
-  Completion requires that exact turn in that exact session's history. Idle,
-  unrelated turns, and another waiter's completion are not success signals.
-- A terminal wait returns `200 {task, timedOut:false}`. A wait deadline returns
-  **408** `{task, timedOut:true}` and leaves the task running/queued. Allowed
-  wait timeout: 0 through 120000 ms. Disconnecting a waiter also leaves it
-  alone. Repeat the wait or GET later. A failed task's terminal wait is HTTP 200
-  **with task.status="failed"**, never a successful task result.
-- `result` preserves the complete ahpc turn response: ID, role, state, time,
-  message, text, error, and tool summaries as provided by ahpc. It is not a raw
-  filesystem snapshot or a full tool-output archive.
-- Cancelling queued work never touches the Host. Running cancellation records
-  `cancelRequested`; it only becomes `cancelled` when that turn's history
-  confirms cancellation. A racing completion may truthfully win. The adapter
-  checks the active turn ID again before cancelling, so it cannot cancel a
-  different turn.
-- A task paused for permission/input stays running. This first version never
-  auto-approves tools and has no permission/question answering API. Use a
-  separately configured client for explicit interaction, or cancel the task.
-- Readiness failure is HTTP 503; missing authentication is 401; invalid input is
-  400/413/415; missing resource is 404. Errors use `{error:{code}}` without raw
-  upstream messages, tokens, or subprocess output.
-- An owned subprocess exit fails pending tasks with an explicit
-  `*_outcome_unknown` error and makes health unavailable. This means agent
-  outcome is unknown, not that remote effects have been rolled back.
+Sessions created empty remain known even before appearing in the backend
+catalogue; `hostVisible` means catalogue visibility, not success. Tasks are
+`queued`, `running`, `completed`, `failed` or `cancelled`; submissions serialize
+per session and can run concurrently in different sessions. Completion requires
+the caller-assigned exact `turnId` in the exact session history, never idle
+state or an unrelated turn. A terminal wait returns HTTP 200 with the actual
+task status; a failed task is **not** a successful result. Timeout returns HTTP
+408 with `{task,timedOut:true}` and leaves work intact. Wait limits are 0–120000
+ms; disconnecting a waiter leaves the task intact.
 
-## Stop, recovery, and limits
+Queued cancellation is local. Running cancellation is confirmed only by that
+turn's history; racing completion may win. Cancellation never targets another
+turn. Permission/input pauses stay running: no automatic tool approval or
+permission-answering API is implemented. Unsupported backend operations fail
+explicitly. Authentication requirements, connection loss, cancellation and
+failed turns remain distinct; an owned process exit fails pending tasks with an
+explicit `*_outcome_unknown`, not a fabricated answer or rollback claim.
 
-Stop with Ctrl+C or SIGTERM. Shutdown closes outstanding waits, terminates only
-the adapter and Host process trees created by this invocation, removes the
-connection token, and releases the instance lock. Windows tree termination uses
-the exact owned PID, never an image/process name. An explicitly attached Host is
-left running; its in-flight task may continue after service shutdown.
+## Shutdown, recovery and limits
 
-Session/task tracking and results are **in memory**. No prompts, responses, or
-credentials are journaled by ahplex. Restart loses task IDs and known empty
-sessions, but managed Host server data remains in the instance directory.
-Recover visible sessions with `/sessions`; recover historical work using an
-explicitly authenticated Host client, not by resubmitting a lost task blindly.
-The first version retains at most 10000 tasks and refuses further submissions
-with 503 `task_capacity`; it does not silently evict tracked results.
+Ctrl+C/SIGTERM closes outstanding waits, terminates only this invocation's owned
+service/bridge process trees, removes generated transport tokens and releases
+locks. Windows termination uses exact owned PIDs, never process names.
+Attachments and unrelated editor/agent processes remain running. Native profile
+directories are persistent and never removed. Shutdown is idempotent; cleanup
+failure is reported and retains ownership locks to prevent unsafe reuse.
 
-After an unclean kill, `owner.lock` may remain. Do not remove it automatically:
-verify the recorded PID and any associated processes really belong to this
-instance and have stopped. If necessary stop those exact owned PIDs, then remove
-that instance's stale lock and connection-token file before restarting. Never
-kill all `Code`, `node`, or agent processes. Cleanup errors retain the lock and
-report failure rather than pretend shutdown succeeded.
+Task tracking is in memory (maximum 10000 tasks per service); restarting loses
+task IDs and known empty sessions, not native service data. Prompts/results are
+not journaled by ahplex. Recover the backend catalogue explicitly and never
+blindly resubmit lost work. After an unclean kill, inspect the recorded PID and
+associated owned processes before manually removing stale locks/tokens. Never
+kill all Code, node or agent processes.
 
-**This is not an OS sandbox.** Agents/tools run with this service account's
-filesystem, network, process, and OS credential-store privileges. Environment
-and data-directory separation are not protection against a malicious provider or
-tool accessing another directory/OS credential store. Use a dedicated OS
-account, container, or VM for stronger isolation. Only grant work in directories
-you intend to expose.
+**This is not an OS sandbox.** Providers/tools retain the OS account's
+filesystem, network and credential-store privileges. Environment/profile
+separation is not protection against a malicious provider. Use a dedicated OS
+account, container or VM when stronger isolation is needed.
 
 ## Compatibility and template lineage
 
-`@softov/ahpc` 0.9.0 is the sole runtime dependency, needed for its AHP client
-and HTTP adapter. The package pins the version and registers a fail-closed Node
-ESM load hook **only inside the owned adapter worker**. It corrects all three
-directory URI conversions using `pathToFileURL`, permits an explicit turn ID,
-and guards cancellation with that ID. It never writes to `node_modules`. Exact
-source markers are checked; an unexpected upstream version fails startup rather
-than silently dropping the fix. Tests cover compatibility, Windows escaping, and
-task correlation. Review/remove this shim when upstream supports these hooks.
+`@softov/ahpc` 0.9.0 is the sole runtime dependency. A fail-closed in-memory
+Node ESM hook, only inside the owned bridge worker, corrects three directory URI
+conversions, supplies caller-assigned turn IDs and guards cancellation by ID. It
+never changes `node_modules`; unexpected source markers fail startup.
+Review/remove this shim when upstream supports the hooks.
 
 Derived with `git-lineage` from `preset-npm-package` main, preserving history:
 source `6c693e8c8aa178224439e86ee2b904995c97bfb2`, birth
-`d74a661c6955cef5907624eb8ba130a646217174`. The origin points to
-`https://github.com/shazhou-ww/ahplex.git`. `.git-lineage.yaml` records the
-immediate parent; run `git-lineage update` only on a clean worktree for future
-template merges.
+`d74a661c6955cef5907624eb8ba130a646217174`. The origin is
+`https://github.com/shazhou-ww/ahplex.git`; `.git-lineage.yaml` records the
+parent.
 
-The template's strict TypeScript, ESM export map, published-file allowlist,
-ESLint, Prettier, Vitest/V8 90% thresholds, build, publint, CI, and Trusted
-Publishing workflows remain in place. Keep `private: true` until a separate,
-intentional publishing setup. This implementation does not publish npm or push
-release tags.
+Strict ESM/TypeScript, exports/files boundaries, ESLint, Prettier, Vitest/V8 90%
+coverage thresholds, build, publint, CI and Trusted Publishing remain in place.
+The package stays private at `0.1.0`; this work does not publish npm or tag
+releases.
 
 ### Trusted Publishing configuration
 
-For the npm package `ahplex`, configure the GitHub Actions Trusted Publisher
-with:
+For npm package `ahplex`, configure the GitHub Actions Trusted Publisher:
 
 - Organization/user: `shazhou-ww`
 - Repository: `ahplex`
@@ -254,19 +363,15 @@ with:
 - Environment: `npm`
 
 The existing [publish workflow](.github/workflows/publish-npm.yaml) uses OIDC;
-do not introduce a long-lived npm token. The package remains private at version
-`0.1.0` until an intentional release. Configuring the publisher alone does not
-publish it or remove that safeguard.
+never introduce a long-lived npm token. Configuring a publisher does not publish
+the private package or authorize a release.
 
 ## Silvermoon
 
-Repository ideas use Silvermoon v2 under [`.silvermoon/`](./.silvermoon/). The
-shared primary is `https://github.com/shazhou-ww/ahplex.git`, branch `main`;
-idea content defaults to English (`en-US`).
-
-Install Silvermoon globally on the device and register its canonical personal
-skill; do not add it as a package dependency or copy its skill into this
-repository.
+Repository ideas use Silvermoon v2 under [`.silvermoon/`](./.silvermoon/), with
+primary `https://github.com/shazhou-ww/ahplex.git`, branch `main`, and content
+language English (`en-US`). Install Silvermoon globally and register its
+canonical personal skill; never add a project dependency or local skill copy.
 
 ```powershell
 npm install --global silvermoon
@@ -276,11 +381,10 @@ silvermoon list-ideas --audience agent
 silvermoon create-idea --audience agent
 ```
 
-Use an explicit idea ULID or alias with `silvermoon whats-next` to continue an
-idea. Validate metadata with `silvermoon check --worktree --audience agent`
-before staging and `silvermoon check --staged --audience agent` before
-committing. Lifecycle acceptance requires an explicit human decision for the
-exact submitted revision synchronized to primary.
+Continue a selected idea using an explicit ULID or alias. Validate with
+`silvermoon check --worktree --audience agent` before staging and
+`silvermoon check --staged --audience agent` before committing. Acceptance
+targets the exact submitted revision synchronized to primary.
 
 ## License
 

@@ -17,6 +17,15 @@ export interface ServerOptions {
   health?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
 }
 
+export interface ServiceRouter {
+  services(): string[];
+  select(id: string): Promise<{
+    manager: TaskManager;
+    health(): Promise<Record<string, unknown>>;
+  }>;
+  close(): Promise<void>;
+}
+
 async function body(
   request: IncomingMessage,
 ): Promise<Record<string, unknown>> {
@@ -47,7 +56,7 @@ async function body(
 }
 
 export async function serveHub(
-  manager: TaskManager,
+  source: TaskManager | ServiceRouter,
   options: ServerOptions = {},
 ): Promise<{ server: Server; url: string; close(): Promise<void> }> {
   const server = createServer((request, response) => {
@@ -96,14 +105,33 @@ export async function serveHub(
           throw new HubError("invalid_resource_path", 400);
         }
         const method = request.method;
-        if (method === "GET" && url.pathname === "/health") {
-          const health = (await options.health?.()) ?? { status: "ready" };
+        let manager: TaskManager;
+        let getHealth = options.health;
+        if ("select" in source) {
+          if (method === "GET" && url.pathname === "/services") {
+            send(200, { services: source.services() });
+            return;
+          }
+          if (method === "GET" && url.pathname === "/health") {
+            send(200, { status: "listening", services: source.services() });
+            return;
+          }
+          if (path[0] !== "services" || path[1] === undefined)
+            throw new HubError("explicit_service_required", 400);
+          const selected = await source.select(path[1]);
+          manager = selected.manager;
+          getHealth = () => selected.health();
+          path = path.slice(2);
+        } else manager = source;
+        const route = `/${path.join("/")}`;
+        if (method === "GET" && route === "/health") {
+          const health = (await getHealth?.()) ?? { status: "ready" };
           send(health.status === "unavailable" ? 503 : 200, health);
-        } else if (method === "GET" && url.pathname === "/agents") {
+        } else if (method === "GET" && route === "/agents") {
           send(200, { agents: await manager.agents() });
-        } else if (method === "GET" && url.pathname === "/sessions") {
+        } else if (method === "GET" && route === "/sessions") {
           send(200, { sessions: await manager.listSessions() });
-        } else if (method === "POST" && url.pathname === "/sessions") {
+        } else if (method === "POST" && route === "/sessions") {
           send(201, await manager.createSession(await body(request)));
         } else if (
           method === "POST" &&
@@ -172,14 +200,17 @@ export async function serveHub(
     server,
     url: `http://127.0.0.1:${address.port}`,
     close: async () => {
-      await manager.close();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
+      try {
+        await source.close();
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+          server.closeAllConnections();
         });
-        server.closeAllConnections();
-      });
+      }
     },
   };
 }

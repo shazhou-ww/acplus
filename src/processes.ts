@@ -99,9 +99,11 @@ export class OwnedProcess {
     env: NodeJS.ProcessEnv,
     onExit: () => void = () => {},
     ipc = false,
+    cwd?: string,
   ) {
     this.child = spawn(executable, args, {
       env,
+      ...(cwd === undefined ? {} : { cwd }),
       windowsHide: true,
       detached: process.platform !== "win32",
       stdio: ipc ? ["ignore", "ignore", "ignore", "ipc"] : "ignore",

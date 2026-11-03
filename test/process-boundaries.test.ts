@@ -47,6 +47,31 @@ afterEach(() => {
 });
 
 describe("process boundaries with synthetic child handles (never OS PIDs)", () => {
+  it("passes the exact executable, argument array, environment and cwd without a shell", async () => {
+    const args = [
+      "space argument",
+      "$(not a shell)",
+      '{"providerOption":true}',
+    ];
+    const env = { HOME: "intended-context" };
+    const owned = new OwnedProcess(
+      "exact-executable",
+      args,
+      env,
+      () => {},
+      false,
+      "intended-directory",
+    );
+    expect(spawn).toHaveBeenCalledWith("exact-executable", args, {
+      env,
+      cwd: "intended-directory",
+      windowsHide: true,
+      detached: platform !== "win32",
+      stdio: "ignore",
+    });
+    child.emit("exit", 0);
+    await owned.stop();
+  });
   it("finds the native executable and skips missing PATH entries", async () => {
     vi.stubEnv("PATH", `first${delimiter}second`);
     vi.mocked(access).mockRejectedValueOnce(
