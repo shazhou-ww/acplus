@@ -258,6 +258,30 @@ do not introduce a long-lived npm token. The package remains private at version
 `0.1.0` until an intentional release. Configuring the publisher alone does not
 publish it or remove that safeguard.
 
+## Silvermoon
+
+Repository ideas use Silvermoon v2 under [`.silvermoon/`](./.silvermoon/). The
+shared primary is `https://github.com/shazhou-ww/ahplex.git`, branch `main`;
+idea content defaults to English (`en-US`).
+
+Install Silvermoon globally on the device and register its canonical personal
+skill; do not add it as a package dependency or copy its skill into this
+repository.
+
+```powershell
+npm install --global silvermoon
+silvermoon-link-skill
+silvermoon whats-next --audience agent
+silvermoon list-ideas --audience agent
+silvermoon create-idea --audience agent
+```
+
+Use an explicit idea ULID or alias with `silvermoon whats-next` to continue an
+idea. Validate metadata with `silvermoon check --worktree --audience agent`
+before staging and `silvermoon check --staged --audience agent` before
+committing. Lifecycle acceptance requires an explicit human decision for the
+exact submitted revision synchronized to primary.
+
 ## License
 
 MIT. ahpc is an MIT-licensed external dependency.
