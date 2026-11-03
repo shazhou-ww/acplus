@@ -15,6 +15,12 @@ VS Code and bridge versions and sanitized configuration in Outer World
 verification evidence. Inspect only these operation-owned contexts; the running
 editor is not an authorization source.
 
+Compare the CLI-managed Host with an explicitly selected Microsoft VS Code
+Server Agent Host entry point in a new operation-owned context. Record the
+actual Server build, executable, arguments and environment separately from the
+CLI version. Do not equate Microsoft's Server with the third-party code-server
+product, or claim to reproduce an earlier successful run without its evidence.
+
 ### D-S02: Verify real HTTP forwarding and failures
 
 Exercise on-demand startup, a harmless question and its exact task result,
