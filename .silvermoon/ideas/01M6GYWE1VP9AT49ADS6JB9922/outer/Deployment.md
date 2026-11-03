@@ -12,8 +12,8 @@ Use the installed native VS Code executable and the documented owned schema-2
 registry configuration with two distinct service IDs, private persistent
 profiles, loopback transport and no provider-token injection. Record the exact
 VS Code and bridge versions and sanitized configuration in Outer World
-verification evidence. Inspect only these operation-owned
-contexts; the running editor is not an authorization source.
+verification evidence. Inspect only these operation-owned contexts; the running
+editor is not an authorization source.
 
 ### D-S02: Verify real HTTP forwarding and failures
 
@@ -57,3 +57,13 @@ requirement without ahplex acquiring editor credentials.
 Before/after evidence shows owned processes stopped, unrelated editor/agent
 processes remained intact, and intentionally persistent service identity data
 was not removed.
+
+## Verification evidence
+
+[Real-environment verification](./Verification.md) records two independent live
+Host/ahpc instances, exact HTTP failures, sanitized configuration and owned
+shutdown/persistent-profile proofs. Deployment is blocked before native
+authorization: the selected native backend returned stream-destroyed RPC errors
+for session listing/creation. No authenticated task or actionable native
+authentication requirement was demonstrated; the missing criteria remain
+unchecked.

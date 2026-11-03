@@ -18,10 +18,10 @@
 
 - [ ] D-S01: Prepare explicit native service contexts
 - [ ] D-S02: Verify real HTTP forwarding and failures
-- [ ] D-S03: Verify shutdown and record reusable evidence
+- [x] D-S03: Verify shutdown and record reusable evidence
 
 ## Acceptance criteria
 
 - [ ] D-AC01: A real native-authorized agent answers through HTTP
 - [ ] D-AC02: Instance and authorization failures remain isolated
-- [ ] D-AC03: Shutdown preserves external processes and service identity
+- [x] D-AC03: Shutdown preserves external processes and service identity
