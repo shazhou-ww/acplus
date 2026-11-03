@@ -19,7 +19,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   });
   if (values.help === true) {
     process.stdout.write(
-      "agenthub --instance NAME [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nCredentials: AGENTHUB_API_TOKEN, AGENTHUB_HOST_TOKEN, AGENTHUB_AUTH_RESOURCE + AGENTHUB_AUTH_TOKEN\n",
+      "ahplex --instance NAME [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nCredentials: AHPLEX_API_TOKEN, AHPLEX_HOST_TOKEN, AHPLEX_AUTH_RESOURCE + AHPLEX_AUTH_TOKEN\n",
     );
     return;
   }
@@ -40,18 +40,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     ...(values["host-url"] === undefined
       ? {}
       : { hostUrl: values["host-url"] }),
-    ...(process.env.AGENTHUB_HOST_TOKEN === undefined
+    ...(process.env.AHPLEX_HOST_TOKEN === undefined
       ? {}
-      : { hostToken: process.env.AGENTHUB_HOST_TOKEN }),
-    ...(process.env.AGENTHUB_API_TOKEN === undefined
+      : { hostToken: process.env.AHPLEX_HOST_TOKEN }),
+    ...(process.env.AHPLEX_API_TOKEN === undefined
       ? {}
-      : { apiToken: process.env.AGENTHUB_API_TOKEN }),
-    ...(process.env.AGENTHUB_AUTH_RESOURCE === undefined
+      : { apiToken: process.env.AHPLEX_API_TOKEN }),
+    ...(process.env.AHPLEX_AUTH_RESOURCE === undefined
       ? {}
-      : { authResource: process.env.AGENTHUB_AUTH_RESOURCE }),
-    ...(process.env.AGENTHUB_AUTH_TOKEN === undefined
+      : { authResource: process.env.AHPLEX_AUTH_RESOURCE }),
+    ...(process.env.AHPLEX_AUTH_TOKEN === undefined
       ? {}
-      : { authToken: process.env.AGENTHUB_AUTH_TOKEN }),
+      : { authToken: process.env.AHPLEX_AUTH_TOKEN }),
   };
   const controller = new AbortController();
   let running: Awaited<ReturnType<typeof start>> | undefined;
@@ -65,7 +65,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         process.exitCode = 0;
       },
       () => {
-        process.stderr.write("agenthub: cleanup_failed\n");
+        process.stderr.write("ahplex: cleanup_failed\n");
         process.exitCode = 1;
       },
     );
@@ -75,7 +75,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   try {
     running = await start({ ...options, signal: controller.signal });
     process.stdout.write(
-      `agenthub ${options.instance} listening at ${running.url}\n`,
+      `ahplex ${options.instance} listening at ${running.url}\n`,
     );
   } catch (error) {
     process.removeListener("SIGINT", stop);
@@ -89,7 +89,7 @@ if (
   import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
   void main().catch((error: unknown) => {
-    process.stderr.write(`agenthub: ${publicError(error).code}\n`);
+    process.stderr.write(`ahplex: ${publicError(error).code}\n`);
     process.exitCode = 1;
   });
 }

@@ -94,6 +94,13 @@ const config = {
 describe("ahpc worker integration with explicit test HostConnection", () => {
   it("reports missing credentials explicitly and refuses creation or execution", async () => {
     await runAdapter(config);
+    expect(liveHost).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "ahplex-test" }),
+    );
+    expect(serve).toHaveBeenCalledWith(
+      host,
+      expect.objectContaining({ name: "ahplex" }),
+    );
     expect(await tool("hub_status").run(host, {})).toMatchObject({
       authentication: "required",
       instance: "test",

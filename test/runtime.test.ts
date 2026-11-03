@@ -1,11 +1,12 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { start } from "../src/runtime.js";
 
 const state = vi.hoisted(() => ({
   directory: "",
+  root: "",
   registry: "",
   released: false,
   failStop: false,
@@ -22,14 +23,16 @@ const state = vi.hoisted(() => ({
 vi.mock("../src/processes.js", async () => {
   const { EventEmitter } = await import("node:events");
   return {
-    instanceDirectory: () =>
-      Promise.resolve({
+    instanceDirectory: (root: string) => {
+      state.root = root;
+      return Promise.resolve({
         directory: state.directory,
         release: () => {
           state.released = true;
           return Promise.resolve();
         },
-      }),
+      });
+    },
     isolatedEnvironment: () => ({}),
     nativeCode: () => Promise.resolve("fixture-executable"),
     endpointFromRegistry: () => Promise.resolve(state.registry),
@@ -89,7 +92,7 @@ vi.mock("../src/server.js", () => ({
 }));
 
 beforeEach(async () => {
-  state.directory = await mkdtemp(join(tmpdir(), "agenthub-runtime-test-"));
+  state.directory = await mkdtemp(join(tmpdir(), "ahplex-runtime-test-"));
   state.registry = join(state.directory, "registry-fixture.json");
   await writeFile(
     state.registry,
@@ -148,6 +151,7 @@ describe("runtime orchestration (mock subprocess integration, not real Host acce
       hostToken: "fixture",
     });
     expect(state.processes).toHaveLength(1);
+    expect(state.root).toBe(join(homedir(), ".ahplex"));
     expect(await state.health?.()).toMatchObject({ host: { owned: false } });
     await running.close();
   });

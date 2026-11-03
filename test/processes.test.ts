@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 async function directory(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "agenthub-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "ahplex-test-"));
   cleanup.push(() => rm(dir, { recursive: true, force: true }));
   return dir;
 }

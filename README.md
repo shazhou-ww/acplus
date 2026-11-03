@@ -1,4 +1,4 @@
-# agenthub
+# ahplex
 
 A lightweight, loopback-only HTTP service for sessions and correlated tasks on
 an **independent VS Code Agent Host**, using one long-lived ahpc HTTP adapter.
@@ -19,7 +19,7 @@ pnpm check
 pnpm pack
 node .\dist\cli.js --help
 node .\dist\cli.js --instance demo
-# Installed package: agenthub --instance demo
+# Installed package: ahplex --instance demo
 ```
 
 Default HTTP address: `http://127.0.0.1:4280`. `--port 0` selects a free port.
@@ -29,11 +29,21 @@ native `code-tunnel.exe` beside `code.cmd` on PATH; override with
 `--code-path 'C:\...\bin\code-tunnel.exe'`. Shell command strings are not
 accepted.
 
-The service owns a lock in `~/.agenthub/<instance>/`, isolated server and CLI
+The service owns a lock in `~/.ahplex/<instance>/`, isolated server and CLI
 data, and a fresh endpoint registry for each run. Customize the root with
 `--data-dir`. It launches with `--new-instance --foreground`, never `--replace`,
 never reads the editor's registry, and never invokes a CLI per API request.
 Instance names are mandatory and limited to letters, digits, `_`, and `-`.
+
+### Renaming an existing installation
+
+The package and executable are now `ahplex`, credential variables use
+`AHPLEX_*`, and the default data root is `~/.ahplex`. Update launch commands and
+explicit credential injection accordingly. Former environment variables and data
+roots are not automatically read or migrated. To intentionally reuse existing
+instance data, pass its former root through `--data-dir`; do not copy
+credentials from another Host. HTTP routes and task/session response shapes are
+unchanged.
 
 ### Real Host acceptance
 
@@ -66,10 +76,10 @@ Three different credentials have different purposes:
 
    ```powershell
    # Supply these through your approved secret-injection mechanism:
-   $env:AGENTHUB_AUTH_RESOURCE = '<resource advertised by /health>'
-   # AGENTHUB_AUTH_TOKEN: a credential intentionally provisioned for this Host
-   # AGENTHUB_API_TOKEN: optional bearer credential protecting the public API
-   agenthub --instance demo
+   $env:AHPLEX_AUTH_RESOURCE = '<resource advertised by /health>'
+   # AHPLEX_AUTH_TOKEN: a credential intentionally provisioned for this Host
+   # AHPLEX_API_TOKEN: optional bearer credential protecting the public API
+   ahplex --instance demo
    ```
 
 Without a provider credential, `/health` reports `authentication: "required"`
@@ -89,15 +99,15 @@ Do not include unrelated secrets in prompts: arbitrary agent-generated prose
 cannot be universally recognized as sensitive.
 
 All API routes, including health, require `Authorization: Bearer ...` when
-`AGENTHUB_API_TOKEN` is configured. Without it, native programs running locally
+`AHPLEX_API_TOKEN` is configured. Without it, native programs running locally
 can control this service. Browser Origin headers and unexpected Host headers are
 rejected; there is no CORS support.
 
 ### Explicitly configured existing Host
 
 ```powershell
-# Optional AGENTHUB_HOST_TOKEN is supplied through the environment.
-agenthub --instance attached --host-url ws://127.0.0.1:45678
+# Optional AHPLEX_HOST_TOKEN is supplied through the environment.
+ahplex --instance attached --host-url ws://127.0.0.1:45678
 ```
 
 The URL must be an explicit loopback WebSocket endpoint without credentials,
@@ -188,7 +198,7 @@ the exact owned PID, never an image/process name. An explicitly attached Host is
 left running; its in-flight task may continue after service shutdown.
 
 Session/task tracking and results are **in memory**. No prompts, responses, or
-credentials are journaled by agenthub. Restart loses task IDs and known empty
+credentials are journaled by ahplex. Restart loses task IDs and known empty
 sessions, but managed Host server data remains in the instance directory.
 Recover visible sessions with `/sessions`; recover historical work using an
 explicitly authenticated Host client, not by resubmitting a lost task blindly.
@@ -222,15 +232,31 @@ task correlation. Review/remove this shim when upstream supports these hooks.
 
 Derived with `git-lineage` from `preset-npm-package` main, preserving history:
 source `6c693e8c8aa178224439e86ee2b904995c97bfb2`, birth
-`d74a661c6955cef5907624eb8ba130a646217174`. The original agenthub origin is
-unchanged. `.git-lineage.yaml` records the immediate parent; run
-`git-lineage update` only on a clean worktree for future template merges.
+`d74a661c6955cef5907624eb8ba130a646217174`. The origin points to
+`https://github.com/shazhou-ww/ahplex.git`. `.git-lineage.yaml` records the
+immediate parent; run `git-lineage update` only on a clean worktree for future
+template merges.
 
 The template's strict TypeScript, ESM export map, published-file allowlist,
 ESLint, Prettier, Vitest/V8 90% thresholds, build, publint, CI, and Trusted
 Publishing workflows remain in place. Keep `private: true` until a separate,
 intentional publishing setup. This implementation does not publish npm or push
 release tags.
+
+### Trusted Publishing configuration
+
+For the npm package `ahplex`, configure the GitHub Actions Trusted Publisher
+with:
+
+- Organization/user: `shazhou-ww`
+- Repository: `ahplex`
+- Workflow filename: `publish-npm.yaml`
+- Environment: `npm`
+
+The existing [publish workflow](.github/workflows/publish-npm.yaml) uses OIDC;
+do not introduce a long-lived npm token. The package remains private at version
+`0.1.0` until an intentional release. Configuring the publisher alone does not
+publish it or remove that safeguard.
 
 ## License
 

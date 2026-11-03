@@ -44,7 +44,7 @@ export async function start(options: StartOptions): Promise<{
   }
   if (options.hostUrl !== undefined) localUrl(options.hostUrl, "ws:");
   const owned = await instanceDirectory(
-    options.dataDir ?? join(homedir(), ".agenthub"),
+    options.dataDir ?? join(homedir(), ".ahplex"),
     options.instance,
   );
   const children: OwnedProcess[] = [];

@@ -1,5 +1,5 @@
 {
-  "name": "agenthub",
+  "name": "ahplex",
   "version": "0.1.0",
   "description": "Local HTTP session and task manager for an independent VS Code Agent Host.",
   "keywords": [
@@ -7,13 +7,13 @@
     "vscode",
     "http"
   ],
-  "homepage": "https://github.com/shazhou-ww/agenthub#readme",
+  "homepage": "https://github.com/shazhou-ww/ahplex#readme",
   "bugs": {
-    "url": "https://github.com/shazhou-ww/agenthub/issues"
+    "url": "https://github.com/shazhou-ww/ahplex/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shazhou-ww/agenthub.git"
+    "url": "git+https://github.com/shazhou-ww/ahplex.git"
   },
   "license": "MIT",
   "private": true,
@@ -21,7 +21,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agenthub": "./dist/cli.js"
+    "ahplex": "./dist/cli.js"
   },
   "exports": {
     ".": {

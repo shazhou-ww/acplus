@@ -25,7 +25,7 @@ export async function runAdapter(config: WorkerConfig): Promise<void> {
   const host = await liveHost({
     url: config.url,
     token: config.connectionToken,
-    clientId: `agenthub-${config.instance}`,
+    clientId: `ahplex-${config.instance}`,
     onRefusal: (uri) => {
       refused.add(uri);
     },
@@ -71,9 +71,9 @@ export async function runAdapter(config: WorkerConfig): Promise<void> {
   TOOLS.push(
     {
       name: "hub_status",
-      title: "Agenthub adapter status",
+      title: "Ahplex adapter status",
       description:
-        "Private agenthub readiness and explicit authentication state.",
+        "Private ahplex readiness and explicit authentication state.",
       readOnly: true,
       input: { type: "object", properties: {} },
       run: async () => ({
@@ -136,7 +136,7 @@ export async function runAdapter(config: WorkerConfig): Promise<void> {
     host: "127.0.0.1",
     port: 0,
     token: config.apiToken,
-    name: "agenthub",
+    name: "ahplex",
     version: "0.1.0",
   });
   process.send?.({ type: "ready", port: server.port });

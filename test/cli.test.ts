@@ -25,7 +25,7 @@ describe("CLI", () => {
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     await main(["--help"]);
     expect(output).toHaveBeenCalledWith(
-      expect.stringContaining("agenthub --instance"),
+      expect.stringContaining("ahplex --instance"),
     );
     expect(start).not.toHaveBeenCalled();
   });
@@ -84,7 +84,7 @@ describe("CLI", () => {
       "AUTH_RESOURCE",
       "AUTH_TOKEN",
     ]) {
-      vi.stubEnv(`AGENTHUB_${key}`, `fixture-${key}`);
+      vi.stubEnv(`AHPLEX_${key}`, `fixture-${key}`);
     }
     vi.mocked(start).mockResolvedValue({
       url: "http://127.0.0.1:4280",
@@ -108,7 +108,7 @@ describe("CLI", () => {
     if (stop === undefined) throw new Error("Missing handler");
     stop("SIGINT");
     await Promise.resolve();
-    expect(error).toHaveBeenCalledWith("agenthub: cleanup_failed\n");
+    expect(error).toHaveBeenCalledWith("ahplex: cleanup_failed\n");
     expect(process.exitCode).toBe(1);
   });
 

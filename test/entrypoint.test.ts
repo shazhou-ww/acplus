@@ -16,7 +16,7 @@ import { expect, it } from "vitest";
 const exec = promisify(execFile);
 
 it("runs the real CLI entrypoint through a package-manager directory link", async () => {
-  const root = await mkdtemp(join(tmpdir(), "agenthub-entry-"));
+  const root = await mkdtemp(join(tmpdir(), "ahplex-entry-"));
   try {
     const real = join(root, "real");
     const linked = join(root, "linked");
@@ -48,13 +48,13 @@ it("runs the real CLI entrypoint through a package-manager directory link", asyn
       join(linked, "cli.js"),
       "--help",
     ]);
-    expect(help.stdout).toContain("agenthub --instance NAME");
+    expect(help.stdout).toContain("ahplex --instance NAME");
     expect(help.stderr).toBe("");
     await expect(
       exec(process.execPath, [join(linked, "cli.js")]),
     ).rejects.toMatchObject({
       code: 1,
-      stderr: "agenthub: instance_required\n",
+      stderr: "ahplex: instance_required\n",
     });
   } finally {
     await rm(root, { recursive: true, force: true });
