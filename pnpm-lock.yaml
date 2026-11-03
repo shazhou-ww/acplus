@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@softov/ahpc':
+        specifier: 0.9.0
+        version: 0.9.0
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -146,6 +150,9 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
+  '@microsoft/agent-host-protocol@1.0.0':
+    resolution: {integrity: sha512-swjikGoqZ/bv3Mn4vkkLzwpmS/j9tV7Aas7ruD2a/R3KVsUlokwCJNSET57mdsmZLMnrawDaCr/ctufbpjE4iA==}
+
   '@oxc-project/types@0.153.0':
     resolution: {integrity: sha512-jSNrRIyvPVLL5E1z/tS5zLAprosGz/FuI1PWwEOz59j3E4TTTzSpqKb/RDGqJhhW0QHYISGXxq582wGx6T11Tw==}
 
@@ -251,6 +258,27 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@softov/ahpc@0.9.0':
+    resolution: {integrity: sha512-nB5e/zdWoYZlycDxDKIV3f/q3yKfOC3xeg3Q9TjmfbPxAiT6P7tPwbYw7qALFhOFI3CAgTLMzX1MRj3PTrhfTg==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  '@textui/chat@0.9.0':
+    resolution: {integrity: sha512-LM5SdTaV1zCnHsNVgJK4mjg+6WXpZvvtWSEqdMVrR4HCb9ZPuulL/wosgyh3jt518a6NsjhWI2YFBnKMEtBvUA==}
+    engines: {node: '>=22'}
+
+  '@textui/core@0.9.0':
+    resolution: {integrity: sha512-5b8P4Mtcu8yyzxZm9PT6Wt9g9BG4chuEmpTNW3sBR2Ji+8bzRil1E2pCxiZ6GeV/Vpa4Xw26Z3ynDDoBIIQ/GQ==}
+    engines: {node: '>=22'}
+
+  '@textui/terminal@0.9.0':
+    resolution: {integrity: sha512-xoPYXpVOgsYPMe8nGTNYvZNmf/mGlNFMWZch0SmiQvBL/rBPsJ8ujNlHIN4nct+otnz8H1rRrsC0rh3HllhhXg==}
+    engines: {node: '>=22'}
+
+  '@textui/widgets@0.9.0':
+    resolution: {integrity: sha512-TQLfnLClU+0IIC9FAshLAJf8F25xQh64zN0JqLYkdiLEkTuNWJ4A2y5eYAlHBUT0WiHp9b4cJyZgAIdEWjWMDw==}
+    engines: {node: '>=22'}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -613,14 +641,12 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.33.0:
     resolution: {integrity: sha512-RYiYbkokw0trfKqqzfF55lginwEPrD3OJDfTuJzFs1MK6iFnDenaz1fqLLtX4ITG3OktJQXOeTaw1awrBAlZPw==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.33.0:
     resolution: {integrity: sha512-1K+MPfLSFVpphzpdbfkhlWk6wBrTObBzS2T6db10PNOZgR9GoVsAWzwNyuhUYYbTp23j+4RrncfujZ4uAzXvwA==}
@@ -998,6 +1024,8 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
+  '@microsoft/agent-host-protocol@1.0.0': {}
+
   '@oxc-project/types@0.153.0': {}
 
   '@publint/pack@0.1.7':
@@ -1050,6 +1078,29 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@softov/ahpc@0.9.0':
+    dependencies:
+      '@microsoft/agent-host-protocol': 1.0.0
+      '@textui/chat': 0.9.0
+      '@textui/core': 0.9.0
+      '@textui/terminal': 0.9.0
+      '@textui/widgets': 0.9.0
+
+  '@textui/chat@0.9.0':
+    dependencies:
+      '@textui/core': 0.9.0
+      '@textui/widgets': 0.9.0
+
+  '@textui/core@0.9.0': {}
+
+  '@textui/terminal@0.9.0':
+    dependencies:
+      '@textui/core': 0.9.0
+
+  '@textui/widgets@0.9.0':
+    dependencies:
+      '@textui/core': 0.9.0
 
   '@types/chai@5.2.3':
     dependencies:

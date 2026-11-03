@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+import { parseArgs } from "node:util";
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { HubError, publicError } from "./common.js";
+import { start, type StartOptions } from "./runtime.js";
+
+export async function main(args = process.argv.slice(2)): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      help: { type: "boolean", short: "h" },
+      instance: { type: "string" },
+      "data-dir": { type: "string" },
+      port: { type: "string" },
+      "code-path": { type: "string" },
+      "host-url": { type: "string" },
+    },
+  });
+  if (values.help === true) {
+    process.stdout.write(
+      "agenthub --instance NAME [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nCredentials: AGENTHUB_API_TOKEN, AGENTHUB_HOST_TOKEN, AGENTHUB_AUTH_RESOURCE + AGENTHUB_AUTH_TOKEN\n",
+    );
+    return;
+  }
+  if (values.instance === undefined)
+    throw new HubError("instance_required", 400);
+  const port = Number(values.port ?? "4280");
+  if (!Number.isInteger(port) || port < 0 || port > 65535)
+    throw new HubError("invalid_port", 400);
+  const options: StartOptions = {
+    instance: values.instance,
+    port,
+    ...(values["data-dir"] === undefined
+      ? {}
+      : { dataDir: values["data-dir"] }),
+    ...(values["code-path"] === undefined
+      ? {}
+      : { codePath: values["code-path"] }),
+    ...(values["host-url"] === undefined
+      ? {}
+      : { hostUrl: values["host-url"] }),
+    ...(process.env.AGENTHUB_HOST_TOKEN === undefined
+      ? {}
+      : { hostToken: process.env.AGENTHUB_HOST_TOKEN }),
+    ...(process.env.AGENTHUB_API_TOKEN === undefined
+      ? {}
+      : { apiToken: process.env.AGENTHUB_API_TOKEN }),
+    ...(process.env.AGENTHUB_AUTH_RESOURCE === undefined
+      ? {}
+      : { authResource: process.env.AGENTHUB_AUTH_RESOURCE }),
+    ...(process.env.AGENTHUB_AUTH_TOKEN === undefined
+      ? {}
+      : { authToken: process.env.AGENTHUB_AUTH_TOKEN }),
+  };
+  const controller = new AbortController();
+  let running: Awaited<ReturnType<typeof start>> | undefined;
+  const stop = (): void => {
+    if (running === undefined) {
+      controller.abort();
+      return;
+    }
+    void running.close().then(
+      () => {
+        process.exitCode = 0;
+      },
+      () => {
+        process.stderr.write("agenthub: cleanup_failed\n");
+        process.exitCode = 1;
+      },
+    );
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    running = await start({ ...options, signal: controller.signal });
+    process.stdout.write(
+      `agenthub ${options.instance} listening at ${running.url}\n`,
+    );
+  } catch (error) {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+    throw error;
+  }
+}
+
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
+  void main().catch((error: unknown) => {
+    process.stderr.write(`agenthub: ${publicError(error).code}\n`);
+    process.exitCode = 1;
+  });
+}

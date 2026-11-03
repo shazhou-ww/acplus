@@ -1,27 +1,28 @@
 {
-  "name": "preset-npm-package",
-  "version": "0.0.0",
-  "description": "A strict TypeScript preset for publishing a single ESM package to npm.",
+  "name": "agenthub",
+  "version": "0.1.0",
+  "description": "Local HTTP session and task manager for an independent VS Code Agent Host.",
   "keywords": [
-    "typescript",
-    "npm",
-    "package",
-    "preset",
-    "template"
+    "agent",
+    "vscode",
+    "http"
   ],
-  "homepage": "https://github.com/shazhou-ww/preset-npm-package#readme",
+  "homepage": "https://github.com/shazhou-ww/agenthub#readme",
   "bugs": {
-    "url": "https://github.com/shazhou-ww/preset-npm-package/issues"
+    "url": "https://github.com/shazhou-ww/agenthub/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shazhou-ww/preset-npm-package.git"
+    "url": "git+https://github.com/shazhou-ww/agenthub.git"
   },
   "license": "MIT",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "agenthub": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -56,6 +57,9 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@softov/ahpc": "0.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
