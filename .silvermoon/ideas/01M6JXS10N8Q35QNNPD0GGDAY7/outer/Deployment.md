@@ -53,3 +53,12 @@ API chat/turn ID. Fixture success or unauthenticated readiness is not proof.
 
 Before/after process checks prove owned processes stopped, no unrelated editor
 was stopped, and cleanup preserved intended persistent host data.
+
+## Evidence and blocker
+
+[Installed-package verification](Verification.md) records independent real
+startup, native resource routing, missing-credential isolation, and owned
+cleanup against the synchronized deployment contract. D-AC01 and D-AC03 passed.
+D-AC02 remains open because no explicitly authorized real-provider Turn
+completed; both unauthenticated attempts ended in native error. Do not submit
+the deployment gate or infer authorization from fixture results.

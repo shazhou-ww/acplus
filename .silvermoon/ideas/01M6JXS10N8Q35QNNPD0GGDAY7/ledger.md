@@ -19,12 +19,12 @@
 
 ### Deployment steps
 
-- [ ] **D-S01:** Start two independent real VS Code hosts
+- [x] **D-S01:** Start two independent real VS Code hosts
 - [ ] **D-S02:** Verify native resources and upstream authentication
-- [ ] **D-S03:** Verify cleanup and preserve external evidence
+- [x] **D-S03:** Verify cleanup and preserve external evidence
 
 ### Deployment acceptance criteria
 
-- [ ] **D-AC01:** Independent real hosts are usable and isolated
+- [x] **D-AC01:** Independent real hosts are usable and isolated
 - [ ] **D-AC02:** A real authenticated native Turn completes
-- [ ] **D-AC03:** Shutdown cleans only operation-owned resources
+- [x] **D-AC03:** Shutdown cleans only operation-owned resources
