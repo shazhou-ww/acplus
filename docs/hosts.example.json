@@ -1,0 +1,60 @@
+{
+  "$schema": "./host-config.schema.json",
+  "schemaVersion": 1,
+  "instance": "demo",
+  "dataDir": ".\\state\\demo",
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 4280
+  },
+  "plugins": [],
+  "hosts": [
+    {
+      "id": "vscode-dev",
+      "label": "Independent VS Code Host",
+      "adapter": "vscode",
+      "startup": {
+        "command": "code-tunnel.exe",
+        "args": [],
+        "env": {}
+      },
+      "lifecycle": {
+        "prepareOnStartup": false,
+        "onDemand": true,
+        "startupTimeoutMs": 60000
+      },
+      "options": {},
+      "authentication": [
+        {
+          "id": "copilot-provisioned",
+          "provider": "copilotcli",
+          "resource": "https://api.github.com",
+          "adapter": "ahp-token",
+          "options": {
+            "credential": {
+              "source": "env",
+              "name": "AHPLEX_DEMO_GITHUB_TOKEN"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "vscode-test",
+      "label": "Independent test Host",
+      "adapter": "vscode",
+      "startup": {
+        "command": "code-tunnel.exe",
+        "args": [],
+        "env": {}
+      },
+      "lifecycle": {
+        "prepareOnStartup": false,
+        "onDemand": true,
+        "startupTimeoutMs": 60000
+      },
+      "options": {},
+      "authentication": []
+    }
+  ]
+}

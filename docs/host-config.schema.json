@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ahplex:host-config:v1",
+  "title": "ahplex static host configuration (target design)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "instance", "dataDir", "listen", "hosts"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "instance": {
+      "$ref": "#/$defs/id"
+    },
+    "dataDir": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Service-instance runtime-data root. The core derives hosts/<hostId> directories beneath it; not an agent working directory or a guarantee of durable execution storage."
+    },
+    "listen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "module", "options"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "module": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Explicit local ESM .js/.mjs path. Semantic validation rejects URLs and package specifiers."
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/host"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "secret": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "name"],
+          "properties": {
+            "source": {
+              "const": "env"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "path"],
+          "properties": {
+            "source": {
+              "const": "file"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "args", "env"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/secret"
+              }
+            ]
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "provider", "resource", "adapter", "options"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "type": "string",
+          "format": "uri"
+        },
+        "adapter": {
+          "$ref": "#/$defs/id"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "adapter",
+        "startup",
+        "lifecycle",
+        "options",
+        "authentication"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "$ref": "#/$defs/id"
+        },
+        "startup": {
+          "$ref": "#/$defs/startup"
+        },
+        "lifecycle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prepareOnStartup", "onDemand", "startupTimeoutMs"],
+          "properties": {
+            "prepareOnStartup": {
+              "type": "boolean"
+            },
+            "onDemand": {
+              "type": "boolean"
+            },
+            "startupTimeoutMs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "authentication": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/authentication"
+          }
+        }
+      }
+    }
+  }
+}

@@ -16,7 +16,6 @@
     "url": "git+https://github.com/shazhou-ww/ahplex.git"
   },
   "license": "MIT",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

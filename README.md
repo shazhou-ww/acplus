@@ -5,6 +5,27 @@ services**. Services start on demand and each uses one long-lived ahpc bridge
 connection. Provider accounts, model access, login and renewal belong to the
 selected service/provider, not ahplex.
 
+## Target architecture
+
+[MVP requirements](docs/REQUIREMENTS.md) and
+[design invariants](DESIGN-INVARIANTS.md) define a new, AHP-native design: a
+single-package HTTP service that manages multiple owned hosts, bridges their
+authentication, and exposes Sessions, Chats, and Turns. There is no separate
+Task abstraction or service queue. All registered hosts are started and stopped
+by ahplex; inbound access control belongs to an external gateway.
+
+This is the target design, not the current feature set. The instructions below
+describe the existing single-host implementation pending migration.
+
+The target [HTTP API design](docs/API.md) includes an
+[OpenAPI 3.1 contract](docs/openapi.yaml) and a generated
+[HTML reference](docs/api.html). These versioned endpoints are a design draft,
+not implemented routes.
+
+Related target contracts cover the [CLI](docs/CLI.md),
+[static Host configuration](docs/HOST-CONFIG.md), and
+[internal Host/authentication extensions](docs/EXTENSIONS.md).
+
 ## Requirements and development
 
 - Node.js >=22.13 and pnpm >=11.22.
@@ -350,8 +371,8 @@ parent.
 
 Strict ESM/TypeScript, exports/files boundaries, ESLint, Prettier, Vitest/V8 90%
 coverage thresholds, build, publint, CI and Trusted Publishing remain in place.
-The package stays private at `0.1.0`; this work does not publish npm or tag
-releases.
+The package is configured for public npm publication; releases still require an
+intentional version-tag push. This work does not publish npm or tag releases.
 
 ### Trusted Publishing configuration
 
@@ -363,8 +384,9 @@ For npm package `ahplex`, configure the GitHub Actions Trusted Publisher:
 - Environment: `npm`
 
 The existing [publish workflow](.github/workflows/publish-npm.yaml) uses OIDC;
-never introduce a long-lived npm token. Configuring a publisher does not publish
-the private package or authorize a release.
+do not introduce a long-lived npm token. The `private` safeguard has been
+removed for `ahplex@0.1.0`. This change does not publish the package: a matching
+release tag must be explicitly pushed to trigger publication.
 
 ## Silvermoon
 
