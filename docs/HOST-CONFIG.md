@@ -1,6 +1,6 @@
 # Static host configuration design
 
-Status: target design. The runtime does not load this format yet.
+Status: implemented configuration format.
 
 This configuration serves the [AHP-native MVP requirements](REQUIREMENTS.md). It
 registers processes and login mechanisms, not Sessions, Chats, or queued work.
@@ -199,7 +199,7 @@ adapter provisions or resolves them as part of startup and uses them when
 opening its transport; they are not a separate endpoint-registration option and
 do not use this AHP provider-token adapter.
 
-A future GitHub Device Flow plugin can be configured as:
+The built-in GitHub Device Flow adapter can be configured as:
 
 ```json
 {
@@ -214,9 +214,10 @@ A future GitHub Device Flow plugin can be configured as:
 }
 ```
 
-This requires a registered plugin and verified Copilot-compatible OAuth setup;
-the snippet is not a declaration that such a plugin is implemented. Its options
-schema and accepted resources belong to the plugin.
+This requires a deployment-provisioned OAuth application and verified
+Copilot-compatible authorization. No client ID or existing login is inferred.
+The snippet is not evidence that the deployment is authorized; the adapter owns
+its options schema and accepted resources.
 
 ## Trusted plugins
 

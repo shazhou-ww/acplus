@@ -1,10 +1,11 @@
 # MVP requirements
 
-Status: new target design. This replaces the earlier task-centric drafts, not
-the running implementation. Compatibility with the old HTTP/CLI design is not a
-requirement. [API.md](API.md) and [openapi.yaml](openapi.yaml) specify the
+Status: MVP requirement baseline for the native implementation. This replaces
+the earlier task-centric drafts; compatibility with the old HTTP/CLI design is
+not a requirement. [API.md](API.md) and [openapi.yaml](openapi.yaml) specify the
 public contract; [design invariants](../DESIGN-INVARIANTS.md) constrain
-implementation.
+implementation. Silvermoon records implementation and real-environment
+acceptance separately.
 
 ## Product
 

@@ -1,178 +1,249 @@
 import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
-import { HubError, localUrl, object, string } from "./common.js";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { ConfigurationError, record } from "./common.js";
 
-export interface ServiceConfig {
+export type SecretReference =
+  { source: "env"; name: string } | { source: "file"; path: string };
+export interface AuthenticationBinding {
   id: string;
-  kind: "ahp-websocket";
-  endpoint: { url: string; tokenEnv?: string } | { registry: true };
-  launch?: {
-    executable: string;
+  provider: string;
+  resource: string;
+  adapter: string;
+  options: Record<string, unknown>;
+}
+export interface HostConfig {
+  id: string;
+  label: string;
+  adapter: string;
+  startup: {
+    command: string;
     args: string[];
-    cwd: string;
-    environment: {
-      mode: "inherited" | "isolated";
-      inherit: string[];
-      values: Record<string, string>;
-    };
+    env: Record<string, string | SecretReference>;
+    cwd?: string;
   };
-  startupTimeoutMs: number;
-  lifecycle: "owned" | "attached";
+  lifecycle: {
+    prepareOnStartup: boolean;
+    onDemand: boolean;
+    startupTimeoutMs: number;
+  };
+  options: Record<string, unknown>;
+  authentication: AuthenticationBinding[];
+}
+export interface Config {
+  $schema?: string;
+  schemaVersion: 1;
+  instance: string;
+  dataDir: string;
+  listen: { host: string; port: number };
+  plugins?: { id: string; module: string; options: Record<string, unknown> }[];
+  hosts: HostConfig[];
+}
+export interface Overrides {
+  listenHost?: string;
+  port?: number;
+  instance?: string;
+  dataDir?: string;
 }
 
-export interface HubConfig {
-  version: 1;
-  services: ServiceConfig[];
+const nonempty = { type: "string", minLength: 1 };
+const id = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" };
+const options = { type: "object", additionalProperties: true };
+export function objectSchema(
+  properties: Record<string, unknown>,
+  required = Object.keys(properties),
+): Record<string, unknown> {
+  return { type: "object", additionalProperties: false, properties, required };
 }
-
-function keys(value: Record<string, unknown>, allowed: string[]): void {
-  if (Object.keys(value).some((key) => !allowed.includes(key)))
-    throw new HubError("unknown_configuration_field", 400);
-}
-
-function texts(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string"))
-    throw new HubError("invalid_configuration_array", 400);
-  return value as string[];
-}
-
-function environmentNames(names: string[]): string[] {
-  if (names.some((name) => !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)))
-    throw new HubError("invalid_environment_name", 400);
-  return names;
-}
-
-export function instanceId(value: unknown): string {
-  const id = string(value);
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id))
-    throw new HubError("invalid_instance", 400);
-  return id;
-}
-
-export function validateConfig(value: unknown): HubConfig {
-  const root = object(value);
-  keys(root, ["version", "services"]);
-  if (
-    root.version !== 1 ||
-    !Array.isArray(root.services) ||
-    root.services.length === 0
-  )
-    throw new HubError("invalid_service_configuration", 400);
-  const ids = new Set<string>();
-  const endpoints = new Set<string>();
-  const services = root.services.map((raw): ServiceConfig => {
-    const row = object(raw);
-    keys(row, [
-      "id",
-      "kind",
-      "endpoint",
-      "launch",
-      "startupTimeoutMs",
-      "lifecycle",
-    ]);
-    const id = instanceId(row.id);
-    if (ids.has(id)) throw new HubError("duplicate_service_id", 400);
-    ids.add(id);
-    if (row.kind !== "ahp-websocket")
-      throw new HubError("unsupported_bridge_kind", 400);
-    const endpoint = object(row.endpoint);
-    keys(endpoint, ["url", "tokenEnv", "registry"]);
-    let connection: ServiceConfig["endpoint"];
-    if (
-      endpoint.registry === true &&
-      endpoint.url === undefined &&
-      endpoint.tokenEnv === undefined
-    )
-      connection = { registry: true };
-    else if (
-      endpoint.registry === undefined &&
-      typeof endpoint.url === "string"
-    )
-      connection = {
-        url: localUrl(endpoint.url, "ws:").href,
-        ...(endpoint.tokenEnv === undefined
-          ? {}
-          : { tokenEnv: string(endpoint.tokenEnv) }),
-      };
-    else throw new HubError("invalid_service_endpoint", 400);
-    if ("url" in connection) {
-      if (endpoints.has(connection.url))
-        throw new HubError("duplicate_service_endpoint", 400);
-      endpoints.add(connection.url);
-    }
-    const timeout = row.startupTimeoutMs;
-    if (
-      typeof timeout !== "number" ||
-      !Number.isInteger(timeout) ||
-      timeout < 1 ||
-      timeout > 300_000
-    )
-      throw new HubError("invalid_startup_timeout", 400);
-    if (row.lifecycle !== "owned" && row.lifecycle !== "attached")
-      throw new HubError("invalid_service_lifecycle", 400);
-    let launch: ServiceConfig["launch"];
-    if (row.launch !== undefined) {
-      const input = object(row.launch);
-      keys(input, ["executable", "args", "cwd", "environment"]);
-      const environment = object(input.environment);
-      keys(environment, ["mode", "inherit", "values"]);
-      if (environment.mode !== "inherited" && environment.mode !== "isolated")
-        throw new HubError("invalid_environment_mode", 400);
-      const values = object(environment.values);
-      environmentNames(Object.keys(values));
-      if (Object.values(values).some((entry) => typeof entry !== "string"))
-        throw new HubError("invalid_environment_values", 400);
-      const cwd = string(input.cwd);
-      if (!isAbsolute(cwd))
-        throw new HubError("absolute_launch_cwd_required", 400);
-      const args = texts(input.args);
-      const executable = string(input.executable);
-      if (
-        [executable, cwd, ...args, ...(Object.values(values) as string[])].some(
-          (entry) =>
-            entry.includes("\0") ||
-            /\{(?!registryDirectory\}|profileDirectory\}|connectionTokenFile\})[a-zA-Z_][a-zA-Z0-9_]*\}/.test(
-              entry,
-            ),
-        )
-      )
-        throw new HubError("invalid_launch_value", 400);
-      launch = {
-        executable,
-        args,
-        cwd,
-        environment: {
-          mode: environment.mode,
-          inherit: environmentNames(texts(environment.inherit)),
-          values: values as Record<string, string>,
+export const secretSchema = {
+  oneOf: [
+    objectSchema({ source: { const: "env" }, name: nonempty }),
+    objectSchema({ source: { const: "file" }, path: nonempty }),
+  ],
+};
+const schema = objectSchema(
+  {
+    $schema: { type: "string" },
+    schemaVersion: { const: 1 },
+    instance: id,
+    dataDir: nonempty,
+    listen: objectSchema({
+      host: nonempty,
+      port: { type: "integer", minimum: 0, maximum: 65535 },
+    }),
+    plugins: {
+      type: "array",
+      items: objectSchema({ id, module: nonempty, options }),
+    },
+    hosts: {
+      type: "array",
+      items: objectSchema({
+        id,
+        label: nonempty,
+        adapter: id,
+        startup: objectSchema(
+          {
+            command: nonempty,
+            args: { type: "array", items: { type: "string" } },
+            env: {
+              type: "object",
+              additionalProperties: {
+                oneOf: [{ type: "string" }, secretSchema],
+              },
+            },
+            cwd: nonempty,
+          },
+          ["command", "args", "env"],
+        ),
+        lifecycle: objectSchema({
+          prepareOnStartup: { type: "boolean" },
+          onDemand: { type: "boolean" },
+          startupTimeoutMs: {
+            type: "integer",
+            minimum: 1,
+            maximum: 2_147_483_647,
+          },
+        }),
+        options,
+        authentication: {
+          type: "array",
+          items: objectSchema({
+            id,
+            provider: nonempty,
+            resource: { type: "string", format: "uri" },
+            adapter: id,
+            options,
+          }),
         },
-      };
+      }),
+    },
+  },
+  ["schemaVersion", "instance", "dataDir", "listen", "hosts"],
+);
+export const validator = new Ajv2020({ allErrors: true });
+validator.addFormat("uri", {
+  type: "string",
+  validate: (value: string) => {
+    try {
+      return (
+        new URL(value).protocol !== "" &&
+        ![...value].some((character) => character.charCodeAt(0) <= 32)
+      );
+    } catch {
+      return false;
     }
-    if (
-      (row.lifecycle === "owned") !== (launch !== undefined) ||
-      ("registry" in connection && launch === undefined)
-    )
-      throw new HubError("launch_lifecycle_mismatch", 400);
-    if (row.lifecycle === "owned" && "url" in connection)
-      throw new HubError("owned_registry_endpoint_required", 400);
-    return {
-      id,
-      kind: "ahp-websocket",
-      endpoint: connection,
-      ...(launch === undefined ? {} : { launch }),
-      startupTimeoutMs: timeout,
-      lifecycle: row.lifecycle,
-    };
-  });
-  return { version: 1, services };
+  },
+});
+const validate = validator.compile<Config>(schema);
+
+function unique(values: string[], field: string): void {
+  if (new Set(values).size !== values.length)
+    throw new ConfigurationError(`${field}: duplicate identifiers`);
 }
 
-export async function loadConfig(path: string): Promise<HubConfig> {
-  let value: unknown;
+export function validateConfig(input: unknown): Config {
+  if (!validate(input))
+    throw new ConfigurationError(
+      validate.errors
+        ?.map(
+          (error) =>
+            `${error.instancePath || "/"}: ${error.message ?? "invalid"}`,
+        )
+        .join("; "),
+    );
+  unique(
+    input.hosts.map((host) => host.id),
+    "/hosts",
+  );
+  if (process.platform === "win32")
+    unique(
+      input.hosts.map((host) => host.id.toLowerCase()),
+      "/hosts (Windows filesystem)",
+    );
+  unique(
+    (input.plugins ?? []).map((plugin) => plugin.id),
+    "/plugins",
+  );
+  for (const host of input.hosts)
+    unique(
+      host.authentication.map((binding) => binding.id),
+      `/hosts/${host.id}/authentication`,
+    );
+  return input;
+}
+
+export function parseJson(source: string): unknown {
   try {
-    value = JSON.parse(await readFile(resolve(path), "utf8"));
+    return JSON.parse(source.replace(/^\uFEFF/u, ""));
   } catch {
-    throw new HubError("configuration_read_failed", 400);
+    throw new ConfigurationError("Expected one complete UTF-8 JSON document");
   }
-  return validateConfig(value);
+}
+
+function paths(value: unknown, base: string): unknown {
+  if (Array.isArray(value))
+    return value.map((item: unknown) => paths(item, base));
+  if (!record(value)) return value;
+  if (value.source === "file" && typeof value.path === "string")
+    return { ...value, path: resolve(base, value.path) };
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, paths(item, base)]),
+  );
+}
+
+export async function loadConfig(
+  source: string,
+  overrides: Overrides = {},
+  stdin: () => Promise<string> = readStdin,
+  cwd = process.cwd(),
+): Promise<Config> {
+  for (const [name, value] of Object.entries(overrides))
+    if (typeof value === "string" && value.trim() === "")
+      throw new ConfigurationError(`${name}: must be non-empty`);
+  let document: string;
+  try {
+    document =
+      source === "-"
+        ? await stdin()
+        : await readFile(resolve(cwd, source), "utf8");
+  } catch {
+    throw new ConfigurationError("Unable to read configuration source");
+  }
+  const input = validateConfig(parseJson(document));
+  const base = source === "-" ? cwd : dirname(resolve(cwd, source));
+  const effective = validateConfig(paths(input, base));
+  effective.instance = overrides.instance ?? effective.instance;
+  effective.listen.host = overrides.listenHost ?? effective.listen.host;
+  effective.listen.port = overrides.port ?? effective.listen.port;
+  effective.dataDir =
+    overrides.dataDir === undefined
+      ? resolve(base, effective.dataDir)
+      : resolve(cwd, overrides.dataDir);
+  for (const plugin of effective.plugins ?? []) {
+    if (
+      !/\.(?:mjs|js)$/iu.test(plugin.module) ||
+      (/^[a-z][a-z0-9+.-]*:/iu.test(plugin.module) &&
+        !isAbsolute(plugin.module)) ||
+      (!isAbsolute(plugin.module) &&
+        !/^[.][\\/]|^[.][.][\\/]/u.test(plugin.module))
+    )
+      throw new ConfigurationError(
+        "/plugins/module: expected explicit local .js/.mjs path",
+      );
+    plugin.module = resolve(base, plugin.module);
+  }
+  for (const host of effective.hosts) {
+    if (/[\\/]/u.test(host.startup.command))
+      host.startup.command = resolve(base, host.startup.command);
+    if (host.startup.cwd !== undefined)
+      host.startup.cwd = resolve(base, host.startup.cwd);
+  }
+  return validateConfig(effective);
+}
+
+export async function readStdin(): Promise<string> {
+  process.stdin.setEncoding("utf8");
+  let result = "";
+  for await (const chunk of process.stdin) result += String(chunk);
+  return result;
 }

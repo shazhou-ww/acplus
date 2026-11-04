@@ -1,91 +1,310 @@
 #!/usr/bin/env node
-import { parseArgs } from "node:util";
 import { realpathSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { HubError, publicError } from "./common.js";
-import { start, type StartOptions } from "./runtime.js";
-import { loadConfig } from "./config.js";
+import { parseArgs } from "node:util";
+import {
+  ConfigurationError,
+  fields,
+  record,
+  ServiceError,
+  text,
+} from "./common.js";
+import { loadConfig, parseJson, readStdin, type Overrides } from "./config.js";
+import { start } from "./runtime.js";
+
+const HELP = `ahplex serve --config <file|-> [--listen-host ADDRESS] [--port N] [--instance ID] [--data-dir PATH]
+ahplex health
+ahplex hosts list|start|stop [--host ID]
+ahplex sessions list|create --host ID [--provider ID --working-directory FILE-URI]
+ahplex chats list|create --host ID --session URI
+ahplex turns start|get|cancel --host ID --chat URI --turn ID [--text-file FILE|-]
+ahplex auth begin|get|input --host ID [--method ID | --step ID --input-file FILE|-]
+Client commands require --url BASE/v1 or AHPLEX_URL. --json emits only API bodies.
+`;
+const commands: Record<
+  string,
+  { method: string; path: string; required: string[] }
+> = {
+  health: { method: "GET", path: "health", required: [] },
+  "hosts list": { method: "GET", path: "hosts", required: [] },
+  "hosts start": { method: "POST", path: "start", required: ["host"] },
+  "hosts stop": { method: "POST", path: "stop", required: ["host"] },
+  "sessions list": { method: "GET", path: "sessions", required: ["host"] },
+  "sessions create": {
+    method: "POST",
+    path: "sessions",
+    required: ["host", "provider", "working-directory"],
+  },
+  "chats list": { method: "GET", path: "chats", required: ["host", "session"] },
+  "chats create": {
+    method: "POST",
+    path: "chats",
+    required: ["host", "session"],
+  },
+  "turns start": {
+    method: "POST",
+    path: "turns",
+    required: ["host", "chat", "turn", "text-file"],
+  },
+  "turns get": {
+    method: "GET",
+    path: "turns",
+    required: ["host", "chat", "turn"],
+  },
+  "turns cancel": {
+    method: "POST",
+    path: "turns/cancel",
+    required: ["host", "chat", "turn"],
+  },
+  "auth begin": { method: "POST", path: "auth", required: ["host", "method"] },
+  "auth get": { method: "GET", path: "auth", required: ["host"] },
+  "auth input": {
+    method: "POST",
+    path: "auth/input",
+    required: ["host", "step", "input-file"],
+  },
+};
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
-  const { values } = parseArgs({
-    args,
-    options: {
-      help: { type: "boolean", short: "h" },
-      instance: { type: "string" },
-      config: { type: "string" },
-      "data-dir": { type: "string" },
-      port: { type: "string" },
-      "code-path": { type: "string" },
-      "host-url": { type: "string" },
-    },
-  });
-  if (values.help === true) {
-    process.stdout.write(
-      "ahplex --instance NAME [--config FILE] [--port 4280] [--data-dir DIR] [--code-path EXECUTABLE] [--host-url ws://127.0.0.1:PORT]\nSelect a service using /services/ID/...; services start on demand.\nTransport: AHPLEX_API_TOKEN, AHPLEX_HOST_TOKEN (legacy attachment only).\nLegacy optional AHPLEX_AUTH_RESOURCE + AHPLEX_AUTH_TOKEN deliver an explicitly supplied credential; they are not a provider login prerequisite.\n",
-    );
+  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
+    process.stdout.write(HELP);
     return;
   }
-  if (values.instance === undefined)
-    throw new HubError("instance_required", 400);
-  const port = Number(values.port ?? "4280");
-  if (!Number.isInteger(port) || port < 0 || port > 65535)
-    throw new HubError("invalid_port", 400);
-  const options: StartOptions = {
-    instance: values.instance,
-    port,
-    ...(values.config === undefined
-      ? {}
-      : { config: await loadConfig(values.config) }),
-    ...(values["data-dir"] === undefined
-      ? {}
-      : { dataDir: values["data-dir"] }),
-    ...(values["code-path"] === undefined
-      ? {}
-      : { codePath: values["code-path"] }),
-    ...(values["host-url"] === undefined
-      ? {}
-      : { hostUrl: values["host-url"] }),
-    ...(process.env.AHPLEX_HOST_TOKEN === undefined
-      ? {}
-      : { hostToken: process.env.AHPLEX_HOST_TOKEN }),
-    ...(process.env.AHPLEX_API_TOKEN === undefined
-      ? {}
-      : { apiToken: process.env.AHPLEX_API_TOKEN }),
-    ...(process.env.AHPLEX_AUTH_RESOURCE === undefined
-      ? {}
-      : { authResource: process.env.AHPLEX_AUTH_RESOURCE }),
-    ...(process.env.AHPLEX_AUTH_TOKEN === undefined
-      ? {}
-      : { authToken: process.env.AHPLEX_AUTH_TOKEN }),
-  };
-  const controller = new AbortController();
-  let running: Awaited<ReturnType<typeof start>> | undefined;
-  const stop = (): void => {
-    if (running === undefined) {
-      controller.abort();
-      return;
-    }
-    void running.close().then(
-      () => {
-        process.exitCode = 0;
-      },
-      () => {
-        process.stderr.write("ahplex: cleanup_failed\n");
-        process.exitCode = 1;
-      },
+  if (args.length === 1 && args[0] === "--version") {
+    const data: unknown = JSON.parse(
+      await readFile(new URL("../package.json", import.meta.url), "utf8"),
     );
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+    if (!record(data) || typeof data.version !== "string")
+      throw new Error("Invalid package metadata");
+    process.stdout.write(`${data.version}\n`);
+    return;
+  }
+  let parsed;
   try {
-    running = await start({ ...options, signal: controller.signal });
+    parsed = parseArgs({
+      args,
+      allowPositionals: true,
+      tokens: true,
+      options: {
+        ...Object.fromEntries(
+          [
+            "config",
+            "listen-host",
+            "port",
+            "instance",
+            "data-dir",
+            "url",
+            "host",
+            "provider",
+            "working-directory",
+            "session",
+            "chat",
+            "turn",
+            "text-file",
+            "method",
+            "step",
+            "input-file",
+          ].map((name) => [name, { type: "string" as const }]),
+        ),
+        json: { type: "boolean" },
+      },
+    });
+  } catch {
+    throw new ConfigurationError("Unknown or malformed command options");
+  }
+  const json = parsed.values.json === true;
+  delete parsed.values.json;
+  await execute(parsed.positionals, parsed.values, parsed.tokens, json);
+}
+
+async function execute(
+  positionals: string[],
+  values: Record<string, string | boolean | (string | boolean)[] | undefined>,
+  tokens: { kind: string; name?: string }[],
+  json: boolean,
+): Promise<void> {
+  const names = tokens
+    .filter((token) => token.kind === "option")
+    .map((token) => token.name);
+  if (new Set(names).size !== names.length)
+    throw new ConfigurationError("Repeated options are not allowed");
+  const get = (name: string): string => {
+    const value = values[name];
+    if (typeof value !== "string" || value === "")
+      throw new ConfigurationError(
+        `--${name} is required and must be non-empty`,
+      );
+    return value;
+  };
+  const command = positionals.join(" ");
+  if (command === "serve" && !json) {
+    const allowed = ["config", "listen-host", "port", "instance", "data-dir"];
+    if (Object.keys(values).some((key) => !allowed.includes(key)))
+      throw new ConfigurationError("Unexpected serve option");
+    const overrides: Overrides = {};
+    if (values["listen-host"] !== undefined)
+      overrides.listenHost = get("listen-host");
+    if (values.instance !== undefined) overrides.instance = get("instance");
+    if (values["data-dir"] !== undefined) overrides.dataDir = get("data-dir");
+    if (values.port !== undefined) {
+      const port = get("port");
+      if (!/^\d+$/u.test(port) || Number(port) > 65535)
+        throw new ConfigurationError("--port must be 0-65535");
+      overrides.port = Number(port);
+    }
+    const config = await loadConfig(get("config"), overrides);
+    let running: Awaited<ReturnType<typeof start>> | undefined;
+    const interrupted = new AbortController();
+    const stop = (): void => {
+      interrupted.abort();
+      if (running !== undefined) {
+        void running.close().then(
+          () => {
+            process.removeListener("SIGINT", stop);
+            process.removeListener("SIGTERM", stop);
+          },
+          () => {
+            process.stderr.write("ahplex: cleanup_failed_lock_retained\n");
+            process.exitCode = 1;
+          },
+        );
+      }
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    try {
+      running = await start(config);
+      if (interrupted.signal.aborted) stop();
+      else
+        process.stdout.write(
+          `ahplex ${config.instance} listening at ${running.url}\n`,
+        );
+    } catch (error) {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+      throw error;
+    }
+    return;
+  }
+  const spec = commands[command];
+  if (spec === undefined)
+    throw new ConfigurationError("Unknown command; use --help");
+  if (
+    Object.keys(values).some(
+      (key) => !spec.required.includes(key) && key !== "url",
+    )
+  )
+    throw new ConfigurationError("Unexpected command option");
+  for (const key of spec.required) get(key);
+  let url: URL;
+  try {
+    const base = values.url === undefined ? process.env.AHPLEX_URL : get("url");
+    if (base === undefined) throw new Error();
+    url = new URL(base.replace(/\/$/u, "") + "/");
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      !url.pathname.endsWith("/v1/")
+    )
+      throw new Error();
+  } catch {
+    throw new ConfigurationError("Provide --url or AHPLEX_URL ending in /v1");
+  }
+  url.pathname += spec.required.includes("host")
+    ? `hosts/${encodeURIComponent(get("host"))}/${spec.path}`
+    : spec.path;
+  let input: unknown;
+  switch (command) {
+    case "sessions create":
+      input = {
+        provider: get("provider"),
+        workingDirectories: [get("working-directory")],
+      };
+      break;
+    case "chats create":
+      input = { session: get("session") };
+      break;
+    case "chats list":
+      url.searchParams.set("session", get("session"));
+      break;
+    case "turns start":
+      input = {
+        chat: get("chat"),
+        turnId: get("turn"),
+        text: await inputFile(get("text-file")),
+      };
+      break;
+    case "turns get":
+      url.searchParams.set("chat", get("chat"));
+      url.searchParams.set("turnId", get("turn"));
+      break;
+    case "turns cancel":
+      input = { chat: get("chat"), turnId: get("turn") };
+      break;
+    case "auth begin":
+      input = { methodId: get("method") };
+      break;
+    case "auth input": {
+      const map = parseJson(await inputFile(get("input-file")));
+      if (
+        !record(map) ||
+        Object.keys(map).length === 0 ||
+        Object.values(map).some((item) => typeof item !== "string")
+      )
+        throw new ConfigurationError(
+          "Auth input must be a non-empty JSON string map",
+        );
+      input = { stepId: get("step"), values: map };
+      break;
+    }
+  }
+  const response = await fetch(url, {
+    method: spec.method,
+    redirect: "error",
+    signal: AbortSignal.timeout(120_000),
+    ...(input === undefined
+      ? {}
+      : {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    let code = `HTTP ${response.status}`;
+    try {
+      const error = fields(fields(parseJson(raw), ["error"]).error, [
+        "code",
+        "message",
+      ]);
+      const reported = text(error.code, "code");
+      if (/^[a-z][a-z0-9_]{0,80}$/u.test(reported)) code = reported;
+    } catch {
+      /* Gateways need not return the ahplex error shape. */
+    }
+    throw new ServiceError(code, response.status, code);
+  }
+  if (json) {
+    if (raw !== "") process.stdout.write(`${raw}\n`);
+  } else
     process.stdout.write(
-      `ahplex ${options.instance} listening at ${running.url}\n`,
+      raw === ""
+        ? response.status === 202
+          ? "Accepted; poll for progress.\n"
+          : "OK\n"
+        : `${raw}\n`,
     );
-  } catch (error) {
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
-    throw error;
+}
+
+async function inputFile(path: string): Promise<string> {
+  try {
+    return path === "-" ? await readStdin() : await readFile(path, "utf8");
+  } catch {
+    throw new ConfigurationError("Unable to read input file");
   }
 }
 
@@ -94,7 +313,9 @@ if (
   import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
   void main().catch((error: unknown) => {
-    process.stderr.write(`ahplex: ${publicError(error).code}\n`);
-    process.exitCode = 1;
+    process.stderr.write(
+      `ahplex: ${error instanceof ConfigurationError ? error.message : error instanceof ServiceError ? error.code : "request_failed"}\n`,
+    );
+    process.exitCode = error instanceof ConfigurationError ? 2 : 1;
   });
 }

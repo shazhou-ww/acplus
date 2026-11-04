@@ -4,7 +4,8 @@ info:
   version: 0.1.0-design
   summary: Owned AHP hosts, authentication, Sessions, Chats, and Turns.
   description: |
-    New MVP design, not implemented routes. Use native AHP resource identities:
+    Implemented MVP contract; real-provider acceptance is tracked separately.
+    Use native AHP resource identities:
     Session/Chat URIs and actual turn IDs, always scoped to a configured host.
     There are no Task resources, execution queues, or global resource aliases.
     URI-valued query parameters must be URL-encoded; JSON bodies carry raw URIs.
@@ -212,8 +213,11 @@ paths:
       summary: Create an AHP session
       description: |
         ahplex chooses the native session URI and calls AHP createSession.
-        Confirm creation/readiness before returning 201. This does not start a
-        turn. On-demand preparation follows host configuration; login is explicit.
+        Confirm the allocation via the successful RPC and native resource
+        snapshots before returning 201. A host may keep a provisional session at
+        lifecycle=creating until its first turn; 201 does not claim provider
+        materialization or start a turn. On-demand preparation follows host
+        configuration; login is explicit.
         No automatic retry after ambiguous creation (502 creation_outcome_unknown).
         MVP supports one directory, using the native workingDirectories field.
       requestBody:

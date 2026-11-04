@@ -1,7 +1,7 @@
 # MVP CLI design
 
-Status: target design, not implemented commands. The CLI starts the service or
-acts as a thin client of the [AHP-native HTTP API](API.md). The
+Status: implemented CLI contract. The CLI starts the service or acts as a thin
+client of the [AHP-native HTTP API](API.md). The
 [MVP requirements](REQUIREMENTS.md) define its scope.
 
 ## Service entry point
@@ -112,7 +112,7 @@ unavailable observation is an HTTP error, not a fabricated turn outcome.
 
 ## Examples
 
-Proposed commands, not current runtime instructions:
+Commands for the current implementation:
 
 ```powershell
 ahplex serve --config .\hosts.json
@@ -134,6 +134,6 @@ ahplex auth get --host vscode-dev --json
 ahplex sessions list --host vscode-dev --json
 ```
 
-Current runtime commands are not compatibility requirements for this new design.
+The former Task-based commands are not retained as compatibility aliases.
 Interactive TUI, implicit chat/host selection, streaming, and standalone
 validation are deferred until an actual use case requires them.

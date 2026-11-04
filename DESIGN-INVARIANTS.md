@@ -1,9 +1,9 @@
 # Design invariants
 
-Status: target design, not implemented behavior. This document and
+Status: implementation contract. This document and
 [MVP requirements](docs/REQUIREMENTS.md) replace the earlier task-centric
-design. The README's runtime instructions describe existing code pending
-replacement. Changes to these boundaries require an explicit design decision.
+design. The README describes implemented behavior and its verification limits.
+Changes to these boundaries require an explicit design decision.
 
 ## 1. One service, native AHP resources
 

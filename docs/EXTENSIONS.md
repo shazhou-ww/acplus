@@ -1,6 +1,6 @@
 # Internal extension contracts
 
-Status: target interface design, not an implemented or published plugin SDK.
+Status: implemented internal integration contracts, not a published plugin SDK.
 
 The [MVP requirements](REQUIREMENTS.md) and [native AHP API](API.md) define the
 public model. These are internal integration contracts, not another resource
@@ -43,8 +43,8 @@ interface AdapterRegistry {
 ```
 
 These are interface sketches: supporting domain types are defined below and map
-to the configuration schema and OpenAPI DTOs. They are not current public
-exports.
+to the configuration schema and OpenAPI DTOs. The implementation is in
+`src/extensions.ts`; these types are not a stable public plugin SDK.
 
 - A module's default export is its plugin definition. Its ID must equal the
   configured plugin ID; `apiVersion` must match the loader's supported version.
@@ -262,15 +262,16 @@ The core serializes input/expiry/completion races: an expired or aborted attempt
 cannot later become succeeded through a delayed callback. Cleanup releases only
 attempt-owned resources and does not claim to revoke upstream authorization.
 
-### Initial and future mechanisms
+### Authentication mechanisms
 
 - `ahp-token`: resolve a configured secret reference and submit it for an
   advertised AHP resource. No interactive login is implied.
-- A future `github-device` plugin: deployment-provisioned OAuth application,
-  device authorization, caller-visible user code, private token polling, and
-  validated submission to the configured target.
-- Host/provider-specific command adapters: fixed login executable/arguments,
-  explicit supported interaction parsing, and independent verification.
+- Built-in `github-device`: deployment-provisioned OAuth application, device
+  authorization, caller-visible user code, private token polling, and validated
+  submission to the configured target.
+- Optional host/provider-specific command adapters: fixed login
+  executable/arguments, explicit supported interaction parsing, and independent
+  verification.
 
 There is deliberately no universal "run any login command and stream stdout"
 adapter. Each command integration must define its parsing, inputs, cancellation,

@@ -4,16 +4,16 @@
 
 ### Implementation steps
 
-- [ ] **I-S01:** Replace the legacy runtime with native host and authentication
+- [x] **I-S01:** Replace the legacy runtime with native host and authentication
       adapters
-- [ ] **I-S02:** Implement the native resource HTTP and CLI contract
-- [ ] **I-S03:** Independently review and verify the candidate
+- [x] **I-S02:** Implement the native resource HTTP and CLI contract
+- [x] **I-S03:** Independently review and verify the candidate
 
 ### Implementation acceptance criteria
 
-- [ ] **I-AC01:** Configuration and ownership invariants are enforced
-- [ ] **I-AC02:** Native operations and authentication match the API
-- [ ] **I-AC03:** The package is ready for real-host verification
+- [x] **I-AC01:** Configuration and ownership invariants are enforced
+- [x] **I-AC02:** Native operations and authentication match the API
+- [x] **I-AC03:** The package is ready for real-host verification
 
 ## Deployment
 

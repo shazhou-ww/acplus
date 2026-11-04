@@ -1,9 +1,10 @@
 # AHP-native MVP API
 
-Status: new target design. This replaces the earlier task-centric API, not the
-runtime implementation. Start with [requirements](REQUIREMENTS.md) and
-[invariants](../DESIGN-INVARIANTS.md). The [OpenAPI contract](openapi.yaml) is
-the machine-readable source; [HTML reference](api.html) is generated from it.
+Status: implemented MVP contract. This replaces the earlier task-centric API.
+Real-provider acceptance is tracked separately in the Silvermoon idea. Start
+with [requirements](REQUIREMENTS.md) and [invariants](../DESIGN-INVARIANTS.md).
+The [OpenAPI contract](openapi.yaml) is the machine-readable source;
+[HTML reference](api.html) is generated from it.
 
 ## Resource model
 
@@ -95,6 +96,11 @@ independent of origin.
    ```
 
 6. Poll that chat/turn ID, or send `{chat, turnId}` to `/turns/cancel`.
+
+Session creation confirms allocation through RPC and native snapshots. VS Code
+may retain `lifecycle=creating` until first-send provider materialization.
+Returning 201 does not invent a ready lifecycle or send a probe turn; allocated
+Chats remain discoverable before that first execution.
 
 Client-chosen turn IDs are native AHP identifiers, not a second idempotency
 protocol. They let a caller query an ambiguous submission even if its HTTP

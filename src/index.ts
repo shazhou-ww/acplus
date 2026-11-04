@@ -1,12 +1,10 @@
-export { HttpAdapter, type Adapter } from "./adapter.js";
-export { HubError, directoryUri } from "./common.js";
-export { serveHub, type ServerOptions } from "./server.js";
-export { TaskManager, type Task, type TaskStatus } from "./tasks.js";
-export { start, type StartOptions } from "./runtime.js";
-export {
-  loadConfig,
-  validateConfig,
-  type HubConfig,
-  type ServiceConfig,
+export { start } from "./runtime.js";
+export { loadConfig, validateConfig } from "./config.js";
+export type {
+  Config,
+  HostConfig,
+  AuthenticationBinding,
+  SecretReference,
+  Overrides,
 } from "./config.js";
-export type { ServiceRouter } from "./server.js";
+export { ConfigurationError, ServiceError } from "./common.js";

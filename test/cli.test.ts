@@ -1,169 +1,337 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  execFile,
+  execFileSync,
+  spawn,
+  type ChildProcess,
+} from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { main } from "../src/cli.js";
-import { start } from "../src/runtime.js";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { config, eventually } from "./fixture.js";
 
-vi.mock("../src/runtime.js", () => ({ start: vi.fn() }));
-const originalInt = new Set(process.listeners("SIGINT"));
-const originalTerm = new Set(process.listeners("SIGTERM"));
-
+const directory = resolve(".test-state", randomUUID());
+const children = new Set<ChildProcess>();
+beforeAll(async () => {
+  await mkdir(directory, { recursive: true });
+  execFileSync(
+    process.execPath,
+    [
+      join("node_modules", "typescript", "bin", "tsc"),
+      "-p",
+      "tsconfig.build.json",
+    ],
+    { stdio: "pipe" },
+  );
+});
 afterEach(() => {
-  for (const [signal, original] of [
-    ["SIGINT", originalInt],
-    ["SIGTERM", originalTerm],
-  ] as const) {
-    for (const listener of process.listeners(signal)) {
-      if (!original.has(listener)) process.removeListener(signal, listener);
-    }
-  }
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  process.exitCode = undefined;
+});
+afterAll(async () => {
+  for (const child of children) child.kill();
+  await rm(directory, { recursive: true, force: true });
 });
 
-describe("CLI", () => {
-  it("provides help without starting a Host", async () => {
-    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+describe("thin client CLI", () => {
+  it("has help/version and rejects unknown/repeated options, commands and implicit targets", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     await main(["--help"]);
-    expect(output).toHaveBeenCalledWith(
-      expect.stringContaining("ahplex --instance"),
+    expect(String(stdout.mock.calls[0]?.[0])).toContain(
+      "turns start|get|cancel",
     );
-    expect(start).not.toHaveBeenCalled();
+    await main(["--version"]);
+    expect(stdout).toHaveBeenLastCalledWith("0.1.0\n");
+    vi.stubEnv("AHPLEX_URL", "");
+    for (const args of [
+      [],
+      ["validate"],
+      ["tasks", "list"],
+      ["health"],
+      ["health", "--bogus"],
+      ["hosts", "start", "--host", "a", "--host", "b"],
+      ["health", "--url", "http://localhost"],
+      ["health", "--url", "ftp://localhost/v1"],
+      ["health", "--url", "http://user:pass@localhost/v1"],
+      ["health", "--host", "a"],
+      ["hosts", "start", "--url", "http://localhost/v1"],
+      ["serve", "--config", "x", "--port", "-1"],
+      ["serve", "--config", "x", "--port", "1.5"],
+      ["serve", "--config", "x", "--host", "a"],
+      ["serve", "--config", "x", "--json"],
+    ])
+      await expect(main(args)).rejects.toThrow();
   });
 
-  it("rejects missing instance and invalid ports", async () => {
-    await expect(main([])).rejects.toThrow("instance_required");
-    await expect(main(["--instance", "test", "--port=-1"])).rejects.toThrow(
-      "invalid_port",
+  it("maps all client commands exactly and preserves URIs without automatic retry", async () => {
+    vi.stubEnv("AHPLEX_URL", "http://example.test/v1");
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() =>
+        Promise.resolve(new Response(null, { status: 202 })),
+      );
+    const text = join(directory, "prompt.txt");
+    const input = join(directory, "input.json");
+    await writeFile(text, "UTF-8 prompt 你好");
+    await writeFile(input, JSON.stringify({ token: "sensitive" }));
+    const cases = [
+      ["health"],
+      ["hosts", "list"],
+      ["hosts", "start", "--host", "a"],
+      ["hosts", "stop", "--host", "a"],
+      ["sessions", "list", "--host", "a"],
+      [
+        "sessions",
+        "create",
+        "--host",
+        "a",
+        "--provider",
+        "p",
+        "--working-directory",
+        "file:///D:/a%20b",
+      ],
+      ["chats", "list", "--host", "a", "--session", "ahp-session:/a?b#c"],
+      ["chats", "create", "--host", "a", "--session", "ahp-session:/a"],
+      [
+        "turns",
+        "start",
+        "--host",
+        "a",
+        "--chat",
+        "ahp-chat:/a",
+        "--turn",
+        "caller-id",
+        "--text-file",
+        text,
+      ],
+      [
+        "turns",
+        "get",
+        "--host",
+        "a",
+        "--chat",
+        "ahp-chat:/a",
+        "--turn",
+        "caller-id",
+      ],
+      [
+        "turns",
+        "cancel",
+        "--host",
+        "a",
+        "--chat",
+        "ahp-chat:/a",
+        "--turn",
+        "caller-id",
+      ],
+      ["auth", "begin", "--host", "a", "--method", "login"],
+      ["auth", "get", "--host", "a"],
+      [
+        "auth",
+        "input",
+        "--host",
+        "a",
+        "--step",
+        "current",
+        "--input-file",
+        input,
+      ],
+    ];
+    for (const args of cases) await main([...args, "--json"]);
+    expect(fetch).toHaveBeenCalledTimes(14);
+    expect(stdout).not.toHaveBeenCalled();
+    const url = fetch.mock.calls[6]?.[0];
+    expect(url instanceof URL ? url.href : "").toContain(
+      "session=ahp-session%3A%2Fa%3Fb%23c",
     );
-  });
-
-  it("starts with explicit options and handles graceful shutdown", async () => {
-    vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    vi.mocked(start).mockResolvedValue({
-      url: "http://127.0.0.1:4280",
-      directory: "test",
-      close,
-    });
-
+    expect(fetch.mock.calls[8]?.[1]?.body).toBe(
+      JSON.stringify({
+        chat: "ahp-chat:/a",
+        turnId: "caller-id",
+        text: "UTF-8 prompt 你好",
+      }),
+    );
+    await main(["hosts", "start", "--host", "a"]);
+    expect(stdout).toHaveBeenLastCalledWith("Accepted; poll for progress.\n");
+    fetch.mockResolvedValueOnce(Response.json({ state: "error" }));
     await main([
-      "--instance",
-      "test",
+      "turns",
+      "get",
+      "--host",
+      "a",
+      "--chat",
+      "ahp-chat:/a",
+      "--turn",
+      "id",
+      "--json",
+    ]);
+    expect(stdout).toHaveBeenLastCalledWith('{"state":"error"}\n');
+    fetch.mockResolvedValueOnce(
+      Response.json(
+        { error: { code: "chat_busy", message: "busy" } },
+        { status: 409 },
+      ),
+    );
+    await expect(main(["hosts", "list"])).rejects.toThrow("chat_busy");
+    fetch.mockResolvedValueOnce(
+      new Response("gateway unavailable", { status: 502 }),
+    );
+    await expect(main(["health"])).rejects.toThrow("HTTP 502");
+    fetch.mockRejectedValueOnce(new Error("network"));
+    await expect(main(["health"])).rejects.toThrow("network");
+  });
+
+  it("rejects malformed or unavailable input files without posting secret values", async () => {
+    vi.stubEnv("AHPLEX_URL", "http://example.test/v1");
+    const file = join(directory, "invalid.json");
+    await writeFile(file, '{"token":2}');
+    await expect(
+      main([
+        "auth",
+        "input",
+        "--host",
+        "a",
+        "--step",
+        "x",
+        "--input-file",
+        file,
+      ]),
+    ).rejects.toThrow("JSON string map");
+    await expect(
+      main([
+        "turns",
+        "start",
+        "--host",
+        "a",
+        "--chat",
+        "ahp-chat:/a",
+        "--turn",
+        "x",
+        "--text-file",
+        file + ".missing",
+      ]),
+    ).rejects.toThrow("input file");
+  });
+
+  it("runs serve in process with explicit settings and cleans up on signals", async () => {
+    const input = config([]);
+    input.dataDir = join(directory, "in-process");
+    const file = join(directory, "serve.json");
+    await writeFile(file, JSON.stringify(input));
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await main([
+      "serve",
+      "--config",
+      file,
       "--port",
       "0",
-      "--host-url",
-      "ws://127.0.0.1:43211",
+      "--listen-host",
+      "127.0.0.1",
+      "--instance",
+      "direct",
       "--data-dir",
-      "test",
-      "--code-path",
-      "fixture",
+      input.dataDir,
     ]);
-    expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        instance: "test",
-        port: 0,
-        hostUrl: "ws://127.0.0.1:43211",
-        codePath: "fixture",
-      }),
+    expect(stdout).toHaveBeenCalledWith(
+      expect.stringContaining("ahplex direct listening"),
     );
-    const stop = process
-      .listeners("SIGTERM")
-      .find((listener) => !originalTerm.has(listener));
-    if (stop === undefined) throw new Error("Missing shutdown handler");
-    stop("SIGTERM");
-    await Promise.resolve();
-    expect(close).toHaveBeenCalledOnce();
+    const url = /listening at (\S+)/u.exec(
+      String(stdout.mock.calls[0]?.[0]),
+    )?.[1];
+    if (url === undefined) throw new Error("Missing URL");
+    expect((await fetch(url + "/health")).status).toBe(204);
+    process.emit("SIGTERM");
+    await eventually(() => process.listenerCount("SIGINT") === 0);
+  });
+});
+
+describe("built CLI process", () => {
+  it("validates before listening and uses exit code 2 for CLI/config errors", async () => {
+    await expect(
+      promisify(execFile)(process.execPath, [
+        join("dist", "cli.js"),
+        "validate",
+      ]),
+    ).rejects.toMatchObject({ code: 2 });
+    await expect(
+      promisify(execFile)(process.execPath, [
+        join("dist", "cli.js"),
+        "serve",
+        "--config",
+        "missing.json",
+      ]),
+    ).rejects.toMatchObject({ code: 2 });
   });
 
-  it("loads an explicitly named configuration without selecting a service", async () => {
-    vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const root = await mkdtemp(join(process.cwd(), ".test-cli-"));
-    try {
-      const path = join(root, "services.json");
-      const config = {
-        version: 1,
-        services: [
-          {
-            id: "external",
-            kind: "ahp-websocket",
-            lifecycle: "attached",
-            startupTimeoutMs: 100,
-            endpoint: { url: "ws://localhost:4321/" },
-          },
-        ],
-      };
-      await writeFile(path, JSON.stringify(config));
-      vi.mocked(start).mockResolvedValue({
-        url: "http://127.0.0.1:4280",
-        directory: root,
-        close: () => Promise.resolve(),
-      });
-      await main(["--instance", "test", "--config", path]);
-      expect(start).toHaveBeenCalledWith(expect.objectContaining({ config }));
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it("passes only explicit credential variables and surfaces shutdown failure", async () => {
-    vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const error = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-    for (const key of [
-      "HOST_TOKEN",
-      "API_TOKEN",
-      "AUTH_RESOURCE",
-      "AUTH_TOKEN",
-    ]) {
-      vi.stubEnv(`AHPLEX_${key}`, `fixture-${key}`);
-    }
-    vi.mocked(start).mockResolvedValue({
-      url: "http://127.0.0.1:4280",
-      directory: "test",
-      close: () => Promise.reject(new Error("fixture")),
+  it("serves one stdin document through EOF with explicit overrides, then responds to client CLI", async () => {
+    const input = config([]);
+    input.dataDir = join(directory, "source-root");
+    const effective = join(directory, "override-root");
+    const child = spawn(
+      process.execPath,
+      [
+        join("dist", "cli.js"),
+        "serve",
+        "--config",
+        "-",
+        "--listen-host",
+        "127.0.0.1",
+        "--port",
+        "0",
+        "--instance",
+        "overridden",
+        "--data-dir",
+        effective,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    children.add(child);
+    let output = "";
+    let errors = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
     });
-
-    await main(["--instance", "test"]);
-    expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        port: 4280,
-        hostToken: "fixture-HOST_TOKEN",
-        apiToken: "fixture-API_TOKEN",
-        authResource: "fixture-AUTH_RESOURCE",
-        authToken: "fixture-AUTH_TOKEN",
-      }),
-    );
-    const stop = process
-      .listeners("SIGINT")
-      .find((listener) => !originalInt.has(listener));
-    if (stop === undefined) throw new Error("Missing handler");
-    stop("SIGINT");
-    await Promise.resolve();
-    expect(error).toHaveBeenCalledWith("ahplex: cleanup_failed\n");
-    expect(process.exitCode).toBe(1);
-  });
-
-  it("handles Ctrl+C during startup and removes its signal handlers on failure", async () => {
-    vi.mocked(start).mockImplementation(
-      (options) =>
-        new Promise((_resolve, reject) => {
-          options.signal?.addEventListener(
-            "abort",
-            () => {
-              reject(new Error("startup_cancelled"));
-            },
-            { once: true },
-          );
-        }),
-    );
-    const starting = main(["--instance", "test"]);
-    const stop = process
-      .listeners("SIGINT")
-      .find((listener) => !originalInt.has(listener));
-    if (stop === undefined) throw new Error("Missing startup handler");
-    stop("SIGINT");
-    await expect(starting).rejects.toThrow("startup_cancelled");
-    expect(process.listeners("SIGINT")).not.toContain(stop);
-  });
+    child.stderr.on("data", (chunk: Buffer) => {
+      errors += chunk.toString();
+    });
+    child.stdin.end(JSON.stringify(input));
+    await eventually(() => {
+      if (errors !== "") throw new Error(errors);
+      return output.includes("listening at");
+    }, 10_000);
+    expect(output).toContain("ahplex overridden");
+    const url = /listening at (\S+)/u.exec(output)?.[1];
+    if (url === undefined) throw new Error("No service URL");
+    const health = await promisify(execFile)(process.execPath, [
+      join("dist", "cli.js"),
+      "health",
+      "--url",
+      url,
+      "--json",
+    ]);
+    expect(health.stdout).toBe("");
+    const list = await promisify(execFile)(process.execPath, [
+      join("dist", "cli.js"),
+      "hosts",
+      "list",
+      "--url",
+      url,
+      "--json",
+    ]);
+    expect(list.stdout).toBe("[]\n");
+    child.kill();
+    await new Promise((resolve) => child.once("exit", resolve));
+    children.delete(child);
+  }, 15_000);
 });

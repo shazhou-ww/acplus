@@ -1,92 +1,149 @@
-import { timingSafeEqual } from "node:crypto";
-import { isAbsolute, win32 } from "node:path";
-import { pathToFileURL } from "node:url";
+import { AhpErrorCodes } from "@microsoft/agent-host-protocol";
+import { RpcError } from "@microsoft/agent-host-protocol/client";
 
-export class HubError extends Error {
+export class ServiceError extends Error {
   constructor(
-    public readonly code: string,
-    public readonly status = 502,
+    readonly code: string,
+    readonly status = 502,
+    message = code.replaceAll("_", " "),
   ) {
-    super(code);
+    super(message);
   }
 }
 
-export function checkStartup(signal?: AbortSignal): void {
-  if (signal?.aborted === true) throw new HubError("startup_cancelled", 503);
+export class ConfigurationError extends Error {}
+
+export function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function object(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new HubError("invalid_object", 400);
-  }
-  return value as Record<string, unknown>;
-}
-
-export function string(value: unknown): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new HubError("invalid_string", 400);
-  }
+export function text(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0)
+    throw new ServiceError(
+      "invalid_input",
+      400,
+      `${field} must be non-empty text`,
+    );
   return value;
 }
 
-export function localUrl(value: string, protocol: "http:" | "ws:"): URL {
-  let url: URL;
+export function uri(value: unknown, field: string, protocol?: string): string {
+  const raw = text(value, field);
   try {
-    url = new URL(value);
+    const parsed = new URL(raw);
+    if (
+      raw.trim() !== raw ||
+      [...raw].some((character) => character.charCodeAt(0) <= 32) ||
+      (protocol !== undefined && parsed.protocol !== protocol) ||
+      (protocol === "file:" &&
+        (!raw.startsWith("file:/") ||
+          parsed.search !== "" ||
+          parsed.hash !== ""))
+    )
+      throw new Error();
   } catch {
-    throw new HubError("invalid_endpoint", 400);
+    throw new ServiceError(
+      "invalid_input",
+      400,
+      `${field} must be an absolute URI`,
+    );
   }
+  return raw;
+}
+
+export function fields(
+  value: unknown,
+  keys: string[],
+): Record<string, unknown> {
   if (
-    url.protocol !== protocol ||
-    !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.search !== "" ||
-    url.hash !== "" ||
-    url.pathname !== "/"
-  ) {
-    throw new HubError("explicit_loopback_endpoint_required", 400);
-  }
-  return url;
-}
-
-export function directoryUri(path: string): string {
-  if (!isAbsolute(path) && !win32.isAbsolute(path)) {
-    throw new HubError("absolute_directory_required", 400);
-  }
-  return pathToFileURL(path, { windows: win32.isAbsolute(path) }).href;
-}
-
-export function equalSecret(actual: string, expected: string): boolean {
-  const a = Buffer.from(actual);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-export function publicError(error: unknown): HubError {
-  return error instanceof HubError
-    ? error
-    : new HubError("internal_error", 500);
-}
-
-export function redact(value: unknown, secrets: readonly string[]): unknown {
-  if (typeof value === "string") {
-    return secrets.reduce(
-      (text, secret) =>
-        secret === "" ? text : text.split(secret).join("[redacted]"),
-      value,
+    !record(value) ||
+    Object.keys(value).length !== keys.length ||
+    keys.some((key) => !Object.hasOwn(value, key))
+  )
+    throw new ServiceError(
+      "invalid_input",
+      400,
+      "Unexpected or missing fields",
     );
-  }
-  if (Array.isArray(value)) return value.map((item) => redact(item, secrets));
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        /token|authorization|password|secret|credential|api_?key/i.test(key)
-          ? "[redacted]"
-          : redact(item, secrets),
-      ]),
-    );
-  }
   return value;
+}
+
+export function upstream(
+  error: unknown,
+  fallback = "upstream_unavailable",
+): ServiceError {
+  if (error instanceof ServiceError) return error;
+  if (error instanceof RpcError) {
+    switch (error.code) {
+      case AhpErrorCodes.AuthRequired:
+        return new ServiceError("upstream_auth_required", 409);
+      case AhpErrorCodes.TurnInProgress:
+        return new ServiceError("chat_busy", 409);
+      case AhpErrorCodes.SessionNotFound:
+      case AhpErrorCodes.NotFound:
+        return new ServiceError("resource_not_found", 404);
+      case AhpErrorCodes.ProviderNotFound:
+        return new ServiceError("provider_not_found", 404);
+      default:
+        return new ServiceError("upstream_rejected", 502);
+    }
+  }
+  return new ServiceError(fallback, 503);
+}
+
+export function diagnostic(error: unknown): { code: string; message: string } {
+  const safe = upstream(error);
+  return { code: safe.code, message: safe.message };
+}
+
+export class Redactor {
+  private readonly secrets = new Set<string>();
+
+  add(secret: string): string {
+    if (secret !== "") this.secrets.add(secret);
+    return secret;
+  }
+
+  clean(value: string): string {
+    for (const secret of [...this.secrets].sort((a, b) => b.length - a.length))
+      value = value.replaceAll(secret, "[redacted]");
+    return value;
+  }
+
+  json(value: unknown): string {
+    const displayFields = new Set([
+      "text",
+      "title",
+      "message",
+      "content",
+      "url",
+      "userCode",
+    ]);
+    return JSON.stringify(value, (key, item: unknown) =>
+      typeof item === "string" && displayFields.has(key)
+        ? this.clean(item)
+        : item,
+    );
+  }
+}
+
+export async function bounded<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  let abort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        abort = () => {
+          reject(new ServiceError("operation_cancelled", 503));
+        };
+        signal.addEventListener("abort", abort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (abort !== undefined) signal.removeEventListener("abort", abort);
+  }
 }

@@ -47,3 +47,16 @@ The user explicitly delegated implementation to a subagent and gate review and
 acceptance to the coordinating agent, with autonomous decisions on 2026-11-04.
 Acceptance is recorded only after reviewing the exact synchronized candidate;
 delegation is not evidence that checks or external outcomes have already passed.
+
+## Evidence
+
+[Coordinating-agent gate review](GateReview.md) records the first rejected
+candidate, four blocking findings, independent regression tests, fixes, and the
+final code/package gate results. The native implementation removes the former
+Task/ahpc layer and implements the fourteen operations, static startup and CLI
+contracts, local ESM adapters, explicit token and GitHub device authentication.
+
+Provisional AHP allocation is deliberately distinct from first-turn provider
+materialization. This correction was verified against VS Code 1.145.0 and in
+protocol fixtures, and documented in OpenAPI. Successful real-provider execution
+requires external authorization and remains a deployment criterion.

@@ -1,281 +1,474 @@
-import { createServer, get } from "node:http";
-import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { HttpAdapter, type Adapter } from "../src/adapter.js";
-import { serveHub } from "../src/server.js";
-import { TaskManager } from "../src/tasks.js";
+import {
+  ActionType,
+  ChatInteractivity,
+  ChatOriginKind,
+  ResponsePartKind,
+  SessionLifecycle,
+  SessionStatus,
+  ToolCallStatus,
+} from "@microsoft/agent-host-protocol";
+import {
+  config,
+  eventually,
+  harness,
+  initialChat,
+  initialSession,
+  resource,
+} from "./fixture.js";
 
-const cleanup: (() => Promise<void>)[] = [];
+type Harness = Awaited<ReturnType<typeof harness>>;
+let app: Harness | undefined;
 afterEach(async () => {
-  for (const close of cleanup.reverse()) await close();
-  cleanup.length = 0;
+  await app?.close();
+  app = undefined;
 });
-
-async function setup(token?: string): Promise<string> {
-  const adapter: Adapter = {
-    call: async (name) => {
-      await Promise.resolve();
-      if (name === "new_session") return { session: "provider:/1" };
-      if (name === "list_agents") return [{ provider: "test" }];
-      if (name === "list_sessions") return [];
-      if (name === "hub_start_turn") return {};
-      if (name === "session_history") return { turns: [] };
-      throw new Error("unexpected fixture call");
-    },
-  };
-  const manager = new TaskManager(adapter, 1);
-  const server = await serveHub(manager, {
-    port: 0,
-    ...(token === undefined ? {} : { token }),
-  });
-  cleanup.push(() => server.close());
-  return server.url;
-}
-
-const post = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(body),
+const turn = (id: string, chat = initialChat) => ({
+  chat,
+  turnId: id,
+  text: "Hello",
 });
+const query = (id: string, chat = initialChat) =>
+  `/hosts/a/turns?${new URLSearchParams({ chat, turnId: id }).toString()}`;
 
-describe("resource API over real HTTP sockets", () => {
-  it("serves health, agents, creates sessions and returns a traceable task immediately", async () => {
-    const url = await setup();
-    expect((await fetch(`${url}/health`)).status).toBe(200);
-    expect((await fetch(`${url}/agents`)).status).toBe(200);
-    const created = await fetch(
-      `${url}/sessions`,
-      post({ provider: "test", workingDirectory: "C:\\demo" }),
+describe("fourteen HTTP operations over official SDK transport", () => {
+  it("keeps GET passive, isolates failed hosts, coalesces startup and stops owned hosts", async () => {
+    app = await harness();
+    expect(await app.api("/health")).toMatchObject({
+      status: 204,
+      body: undefined,
+    });
+    expect((await app.api("/hosts")).body).toEqual([
+      { hostId: "a", status: "idle" },
+      { hostId: "b", status: "idle" },
+    ]);
+    expect((await app.api("/hosts/a/sessions")).status).toBe(503);
+    expect(app.host().starts).toBe(0);
+    app.host("b").failStart = true;
+    await app.api("/hosts/b/start", "POST");
+    await Promise.all(
+      Array.from({ length: 10 }, async () => {
+        await app?.api("/hosts/a/start", "POST");
+      }),
     );
+    await eventually(() => app?.service.select("a").native.status === "ready");
+    expect(app.host().starts).toBe(1);
+    expect((await app.api("/hosts")).body).toMatchObject([
+      { hostId: "a", status: "ready", providers: ["test-provider"] },
+      { hostId: "b", status: "failed" },
+    ]);
+    expect((await app.api("/hosts/a/stop", "POST")).status).toBe(202);
+    await eventually(() => app?.service.select("a").native.status === "idle");
+    expect((await app.api("/hosts/a/stop", "POST")).status).toBe(202);
+    expect(app.host().stops).toBe(1);
+    expect((await app.api("/hosts/a/sessions")).status).toBe(503);
+  });
+
+  it("preserves native identities, pagination, empty creation and ordinary chats", async () => {
+    app = await harness();
+    const host = app.host();
+    host.addSession("ahp-session:/second");
+    host.hiddenCreated = true;
+    const created = await app.api("/hosts/a/sessions", "POST", {
+      provider: "test-provider",
+      workingDirectories: ["file:///D:/a%20b"],
+    });
     expect(created.status).toBe(201);
-    const submitted = await fetch(
-      `${url}/sessions/provider%3A%2F1/tasks`,
-      post({ text: "hello" }),
+    const session = resource(created.body);
+    const sessions = await app.api("/hosts/a/sessions");
+    expect(sessions.body).toEqual(
+      expect.arrayContaining([
+        { resource: session, title: "Context", provider: "test-provider" },
+        {
+          resource: "ahp-session:/second",
+          title: "Context",
+          provider: "test-provider",
+        },
+      ]),
     );
-    expect(submitted.status).toBe(202);
-    const task = (await submitted.json()) as { taskId: string };
-    expect((await fetch(`${url}/tasks/${task.taskId}`)).status).toBe(200);
-    const wait = await fetch(`${url}/tasks/${task.taskId}/wait?timeoutMs=1`);
-    expect(wait.status).toBe(408);
-    expect(((await wait.json()) as { timedOut: boolean }).timedOut).toBe(true);
+    const chat = resource(
+      (await app.api("/hosts/a/chats", "POST", { session })).body,
+    );
+    const catalogue = await app.api(
+      `/hosts/a/chats?${new URLSearchParams({ session }).toString()}`,
+    );
+    expect(JSON.stringify(catalogue.body)).toContain(
+      JSON.stringify({ resource: chat, title: "New chat" }),
+    );
     expect(
-      (await fetch(`${url}/tasks/${task.taskId}/cancel`, { method: "POST" }))
-        .status,
-    ).toBe(202);
-    const sessions = await fetch(`${url}/sessions`);
-    expect(sessions.status).toBe(200);
+      host.requests.find((item) => item.method === "createChat")?.params,
+    ).toEqual({ channel: session, chat });
+    expect(
+      host.requests.find((item) => item.method === "createSession")?.params,
+    ).toEqual({
+      channel: session,
+      provider: "test-provider",
+      workingDirectories: ["file:///D:/a%20b"],
+    });
+    await app.ready("b");
+    expect((await app.api("/hosts/b/sessions")).body).toEqual([
+      { resource: initialSession, title: "Context", provider: "test-provider" },
+    ]);
   });
 
-  it("rejects browser requests, rebinding, unknown routes, invalid JSON and timeouts", async () => {
-    const url = await setup();
-    expect(
-      (
-        await fetch(`${url}/health`, {
-          headers: { origin: "https://evil.example" },
-        })
-      ).status,
-    ).toBe(403);
-    const rebinding = await new Promise<number | undefined>(
-      (resolve, reject) => {
-        get(
-          `${url}/health`,
-          { headers: { host: "evil.example" } },
-          (response) => {
-            response.resume();
-            resolve(response.statusCode);
-          },
-        ).once("error", reject);
-      },
-    );
-    expect(rebinding).toBe(403);
-    expect((await fetch(`${url}/missing`)).status).toBe(404);
-    expect((await fetch(`${url}/tasks/missing/other`)).status).toBe(404);
-    expect((await fetch(`${url}/tasks/missing/wait?timeoutMs=-1`)).status).toBe(
-      400,
-    );
-    expect(
-      (await fetch(`${url}/tasks/missing/wait?timeoutMs=NaN`)).status,
-    ).toBe(400);
-    expect(
-      (await fetch(`${url}/sessions`, { method: "POST", body: "{}" })).status,
-    ).toBe(415);
-    expect(
-      (
-        await fetch(`${url}/sessions`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: "{",
-        })
-      ).status,
-    ).toBe(400);
-    expect((await fetch(`${url}/sessions`, post([]))).status).toBe(400);
-    expect(
-      (
-        await fetch(
-          `${url}/sessions`,
-          post({ provider: "x", workingDirectory: "relative" }),
-        )
-      ).status,
-    ).toBe(400);
-  });
-
-  it("requires only explicitly configured API credentials", async () => {
-    const url = await setup("test-secret");
-    expect((await fetch(`${url}/health`)).status).toBe(401);
-    expect(
-      (
-        await fetch(`${url}/health`, {
-          headers: { authorization: "Bearer wrong" },
-        })
-      ).status,
-    ).toBe(401);
-    expect(
-      (
-        await fetch(`${url}/health`, {
-          headers: { authorization: "Bearer test-secret" },
-        })
-      ).status,
-    ).toBe(200);
-  });
-
-  it("returns explicit errors for oversized bodies, malformed resource IDs and unavailable health", async () => {
-    const url = await setup();
-    expect(
-      (await fetch(`${url}/sessions`, post({ text: "x".repeat(1_000_001) })))
-        .status,
-    ).toBe(413);
-    expect((await fetch(`${url}/tasks/%FF`)).status).toBe(400);
-    expect((await fetch(`${url}/tasks/x/wait?timeoutMs=120001`)).status).toBe(
-      400,
-    );
-    const server = await serveHub(
-      new TaskManager({ call: () => Promise.resolve([]) }),
+  it("projects origin and interactivity independently of defaultChat and blocks unsupported creation", async () => {
+    app = await harness();
+    await app.ready();
+    const host = app.host();
+    const state = host.session();
+    delete state.defaultChat;
+    state.chats = [
+      { ...host.state(), origin: { kind: ChatOriginKind.User } },
       {
-        port: 0,
-        secrets: ["fixture-secret"],
-        health: () => ({ status: "unavailable", detail: "fixture-secret" }),
+        ...host.state(),
+        resource: "ahp-chat:/fork",
+        origin: { kind: ChatOriginKind.Fork, chat: initialChat, turnId: "old" },
       },
+      {
+        ...host.state(),
+        resource: "ahp-chat:/side",
+        origin: {
+          kind: ChatOriginKind.SideChat,
+          chat: initialChat,
+          turnId: "old",
+          selection: { text: "private" },
+        },
+      },
+      {
+        ...host.state(),
+        resource: "ahp-chat:/tool",
+        interactivity: ChatInteractivity.ReadOnly,
+        origin: {
+          kind: ChatOriginKind.Tool,
+          chat: initialChat,
+          toolCallId: "tool",
+        },
+      },
+    ];
+    const response = await app.api(
+      `/hosts/a/chats?${new URLSearchParams({ session: initialSession }).toString()}`,
     );
-    cleanup.push(() => server.close());
-    const response = await fetch(`${server.url}/health`);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      status: "unavailable",
-      detail: "[redacted]",
-    });
-  });
-});
-
-describe("ahpc HTTP normalization", () => {
-  it("preserves safe backend capability/auth/connection errors and rejects invalid bridge JSON", async () => {
-    const cases = [
-      ["backend_capability_unsupported", 501],
-      ["backend_authentication_required", 401],
-      ["host_unavailable", 503],
-      ["session_refused", 502],
-      ["session_unavailable", 502],
-      ["session_busy", 502],
-      ["backend_request_failed", 502],
-      ["invalid_json", 502],
-    ] as const;
-    let index = 0;
-    const backend = createServer((_request, response) => {
-      response.writeHead(500);
-      const code = cases[index++]?.[0];
-      response.end(
-        code === "invalid_json" ? "{" : JSON.stringify({ error: code }),
-      );
-    });
-    await new Promise<void>((resolve) =>
-      backend.listen(0, "127.0.0.1", resolve),
-    );
-    cleanup.push(
-      () =>
-        new Promise<void>((resolve) => {
-          backend.close(() => {
-            resolve();
-          });
-        }),
-    );
-    const client = new HttpAdapter(
-      `http://127.0.0.1:${(backend.address() as AddressInfo).port}`,
-      "fixture",
-    );
-    for (const [code, status] of cases)
-      await expect(client.call("test", {})).rejects.toMatchObject({
-        code: code === "invalid_json" ? "adapter_invalid_response" : code,
-        status,
-      });
-  });
-  it("reports transport failure explicitly", async () => {
-    await expect(
-      new HttpAdapter("http://127.0.0.1:1", "fixture").call("test", {}),
-    ).rejects.toMatchObject({ code: "adapter_unavailable" });
-  });
-  it.each([
-    [{ session: "x" }, { session: "x" }],
-    [{ result: [{ session: "x" }] }, [{ session: "x" }]],
-    [[{ session: "x" }], [{ session: "x" }]],
-  ])("normalizes the verified response shapes", async (value, expected) => {
-    const backend = createServer((_request, response) => {
-      response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify(value));
-    });
-    await new Promise<void>((resolve) => {
-      backend.listen(0, "127.0.0.1", resolve);
-    });
-    cleanup.push(
-      () =>
-        new Promise<void>((resolve) => {
-          backend.close(() => {
-            resolve();
-          });
-        }),
-    );
-    const client = new HttpAdapter(
-      `http://127.0.0.1:${(backend.address() as AddressInfo).port}`,
-      "test",
-    );
-    expect(await client.call("list_sessions", {})).toEqual(expected);
+    expect(JSON.stringify(response.body)).not.toContain("private");
+    expect(response.body).not.toHaveProperty("defaultChat");
+    const agent = host.root.agents[0];
+    if (agent === undefined) throw new Error();
+    delete agent.capabilities;
+    expect(
+      (await app.api("/hosts/a/chats", "POST", { session: initialSession }))
+        .body,
+    ).toMatchObject({ error: { code: "capability_unsupported" } });
+    host.state().interactivity = ChatInteractivity.ReadOnly;
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("no"))).body,
+    ).toMatchObject({ error: { code: "chat_not_interactive" } });
   });
 
-  it.each([401, 400, 500])(
-    "surfaces backend errors without leaking response credentials (%s)",
-    async (status) => {
-      const backend = createServer((_request, response) => {
-        response.writeHead(status);
-        response.end(
-          JSON.stringify({
-            error:
-              status === 400
-                ? "backend_authentication_required"
-                : "private token",
-          }),
-        );
+  it("rejects concurrent admissions, observes exact turns, surfaces blocks and cancels only requested ID", async () => {
+    app = await harness();
+    await app.ready();
+    const host = app.host();
+    host.holdDispatch = true;
+    const first = app.api("/hosts/a/turns", "POST", turn("one"));
+    await eventually(() => host.held.length === 1);
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("two"))).body,
+    ).toMatchObject({ error: { code: "chat_busy" } });
+    await host.held.shift()?.();
+    host.holdDispatch = false;
+    expect(await first).toMatchObject({ status: 202, body: undefined });
+    expect((await app.api(query("one"))).body).toEqual({ state: "running" });
+    host.state().status = SessionStatus.InputNeeded;
+    expect((await app.api(query("one"))).body).toEqual({
+      state: "running",
+      inputRequired: true,
+    });
+    host.state().status = SessionStatus.InProgress;
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("one"))).body,
+    ).toMatchObject({ error: { code: "turn_exists" } });
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("two"))).body,
+    ).toMatchObject({ error: { code: "chat_busy" } });
+    await host.emit({
+      type: ActionType.ChatInputRequested,
+      request: { id: "question" },
+    });
+    expect((await app.api(query("one"))).body).toEqual({
+      state: "running",
+      inputRequired: true,
+    });
+    expect((await app.api("/hosts/a/stop", "POST")).body).toMatchObject({
+      error: { code: "host_busy" },
+    });
+    expect(
+      (
+        await app.api("/hosts/a/turns/cancel", "POST", {
+          chat: initialChat,
+          turnId: "other",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.api("/hosts/a/turns/cancel", "POST", {
+          chat: initialChat,
+          turnId: "one",
+        })
+      ).status,
+    ).toBe(202);
+    expect((await app.api(query("one"))).body).toEqual({ state: "cancelled" });
+    expect((await app.api("/hosts/a/turns", "POST", turn("two"))).status).toBe(
+      202,
+    );
+    expect(
+      (
+        await app.api("/hosts/a/turns/cancel", "POST", {
+          chat: initialChat,
+          turnId: "one",
+        })
+      ).status,
+    ).toBe(202);
+    expect(host.state().activeTurn?.id).toBe("two");
+    await host.complete("two", "Hello");
+    expect((await app.api(query("two"))).body).toEqual({
+      state: "complete",
+      text: "Hello",
+    });
+  });
+
+  it("retains uncertain dispatch and never mistakes a wrong echo for acceptance", async () => {
+    app = await harness();
+    await app.ready();
+    const host = app.host();
+    host.wrongEcho = true;
+    host.noApplyDispatch = true;
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("uncertain"))).body,
+    ).toMatchObject({ error: { code: "turn_outcome_unknown" } });
+    expect((await app.api(query("uncertain"))).body).toMatchObject({
+      error: { code: "turn_state_unavailable" },
+    });
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("later"))).status,
+    ).toBe(503);
+    expect((await app.api("/hosts/a/stop", "POST")).body).toMatchObject({
+      error: { code: "host_activity_unknown" },
+    });
+    expect(
+      host.requests.filter((item) => item.method === "dispatchAction"),
+    ).toHaveLength(1);
+  });
+
+  it("reconciles an unacknowledged turn by native state and honors host rejections", async () => {
+    app = await harness();
+    await app.ready();
+    const host = app.host();
+    host.wrongEcho = true;
+    expect((await app.api("/hosts/a/turns", "POST", turn("a"))).status).toBe(
+      502,
+    );
+    expect((await app.api(query("a"))).body).toEqual({ state: "running" });
+    host.wrongEcho = false;
+    await host.complete("a");
+    host.rejectDispatch = "Chat busy";
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("b"))).body,
+    ).toMatchObject({ error: { code: "chat_busy" } });
+    host.rejectDispatch = "No permission";
+    expect(
+      (await app.api("/hosts/a/turns", "POST", turn("b"))).body,
+    ).toMatchObject({ error: { code: "turn_rejected" } });
+    host.rejectDispatch = undefined;
+    expect((await app.api("/hosts/a/turns", "POST", turn("b"))).status).toBe(
+      202,
+    );
+  });
+
+  it("uses error state and markdown only; tool approval blocks are explicit", async () => {
+    app = await harness();
+    await app.ready();
+    await app.api("/hosts/a/turns", "POST", turn("one"));
+    app
+      .host()
+      .state()
+      .activeTurn?.responseParts.push({
+        kind: ResponsePartKind.ToolCall,
+        toolCall: {
+          toolCallId: "tool",
+          toolName: "private",
+          displayName: "Tool",
+          status: ToolCallStatus.PendingConfirmation,
+          invocationMessage: "secret command",
+        },
       });
-      await new Promise<void>((resolve) => {
-        backend.listen(0, "127.0.0.1", resolve);
-      });
-      cleanup.push(
-        () =>
-          new Promise<void>((resolve) => {
-            backend.close(() => {
-              resolve();
-            });
-          }),
+    expect((await app.api(query("one"))).body).toEqual({
+      state: "running",
+      inputRequired: true,
+    });
+    await app.host().emit({
+      type: ActionType.ChatError,
+      turnId: "one",
+      duration: 0,
+      part: {
+        kind: ResponsePartKind.Error,
+        error: { errorType: "error", message: "private details" },
+      },
+    });
+    expect((await app.api(query("one"))).body).toEqual({
+      state: "error",
+      error: {
+        code: "upstream_turn_error",
+        message: "The host reported a turn error",
+      },
+    });
+  });
+
+  it("returns uncertainty for incomplete or inaccessible history; pagination cannot loop", async () => {
+    app = await harness();
+    await app.ready();
+    app.host().state().turnsNextCursor = "older";
+    app.host().errors.set("fetchTurns", -32601);
+    expect((await app.api(query("old"))).body).toMatchObject({
+      error: { code: "turn_state_unavailable" },
+    });
+    app.host().errors.delete("fetchTurns");
+    expect((await app.api(query("old"))).status).toBe(404);
+    app.host().duplicateCursor = true;
+    expect((await app.api("/hosts/a/sessions")).body).toMatchObject({
+      error: { code: "incomplete_host_catalogue" },
+    });
+  });
+
+  it("reconnects without starting another process or exposing stale observations", async () => {
+    app = await harness();
+    await app.ready();
+    await app.api("/hosts/a/turns", "POST", turn("one"));
+    app.host().connectDelay = 100;
+    await app.host().disconnect();
+    await eventually(() => app?.service.select("a").native.status !== "ready");
+    expect((await app.api(query("one"))).status).toBe(503);
+    await eventually(() => app?.service.select("a").native.status === "ready");
+    expect(app.host().starts).toBe(1);
+    expect(app.host().connections).toBe(2);
+    expect((await app.api(query("one"))).body).toEqual({ state: "running" });
+    expect(
+      app.host().requests.filter((item) => item.method === "dispatchAction"),
+    ).toHaveLength(1);
+  });
+
+  it("validates inputs and has no old, gateway, or arbitrary-command API", async () => {
+    app = await harness();
+    for (const path of ["/tasks", "/hosts/a", "/services", "/hosts/a/tools"])
+      expect((await app.api(path)).status).toBe(404);
+    expect((await app.api("/hosts/unknown/start", "POST")).status).toBe(404);
+    for (const value of [
+      {},
+      { provider: "test-provider", workingDirectories: [] },
+      { provider: "test-provider", workingDirectories: ["D:\\work"] },
+      { provider: "test-provider", workingDirectories: ["file:relative"] },
+      {
+        provider: "test-provider",
+        workingDirectories: ["file:///D:/work#fragment"],
+      },
+      {
+        provider: "test-provider",
+        workingDirectories: ["file:///D:/work"],
+        extra: true,
+      },
+    ])
+      expect((await app.api("/hosts/a/sessions", "POST", value)).status).toBe(
+        400,
       );
-      const client = new HttpAdapter(
-        `http://127.0.0.1:${(backend.address() as AddressInfo).port}`,
-        "test",
-      );
-      await expect(client.call("test", {})).rejects.toMatchObject({
-        code:
-          status === 500
-            ? "adapter_request_failed"
-            : status === 400
-              ? "backend_authentication_required"
-              : "auth_required",
+    expect((await app.api("/hosts/a/chats?session=x&session=y")).status).toBe(
+      400,
+    );
+    expect((await app.api("/hosts/a/chats", "DELETE")).status).toBe(404);
+    const response = await fetch(app.url + "/health", {
+      headers: { origin: "https://external.example" },
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(app.host().starts).toBe(0);
+    const invalidRequests = [
+      { headers: {}, body: "{}" },
+      { headers: { "content-type": "application/json" }, body: "{" },
+      {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "x".repeat(1_048_577) }),
+      },
+    ];
+    for (const options of invalidRequests) {
+      const response = await fetch(app.url + "/hosts/a/turns", {
+        method: "POST",
+        ...options,
       });
-    },
-  );
+      expect(response.status).toBe(400);
+    }
+    expect((await app.api("/hosts/%ZZ/start", "POST")).status).toBe(400);
+  });
+
+  it("does not turn malformed native state into success-shaped observations", async () => {
+    app = await harness();
+    await app.ready();
+    app.host().malformed = "catalogue";
+    expect((await app.api("/hosts/a/sessions")).body).toMatchObject({
+      error: { code: "invalid_host_catalogue" },
+    });
+    for (const kind of ["session", "chat"] as const) {
+      app.host().malformed = kind;
+      expect(
+        (await app.api(`/hosts/a/chats?session=${initialSession}`)).status,
+      ).toBe(502);
+    }
+    for (const kind of ["turn", "terminal"] as const) {
+      app.host().malformed = kind;
+      expect((await app.api(query("old"))).body).toMatchObject({
+        error: { code: "turn_state_unavailable" },
+      });
+    }
+    app.host().malformed = "root";
+    expect((await app.api("/hosts")).body).toMatchObject([
+      { hostId: "a", status: "failed" },
+      { hostId: "b", status: "idle" },
+    ]);
+    app.host().malformed = undefined;
+    expect((await app.api(query("id", "ahp-chat:/missing"))).status).toBe(404);
+  });
+
+  it("fails explicit startup requirements and missing/corrupt host snapshots safely", async () => {
+    const input = config();
+    const a = input.hosts[0];
+    if (a === undefined) throw new Error();
+    a.lifecycle.onDemand = false;
+    app = await harness(input);
+    expect(
+      (
+        await app.api("/hosts/a/sessions", "POST", {
+          provider: "test-provider",
+          workingDirectories: ["file:///D:/"],
+        })
+      ).status,
+    ).toBe(503);
+    await app.ready();
+    app.host().omitSnapshot = true;
+    expect(
+      (await app.api(`/hosts/a/chats?session=${initialSession}`)).status,
+    ).toBe(503);
+    app.host().omitSnapshot = false;
+    app.host().invalidSnapshot = true;
+    expect(
+      (await app.api(`/hosts/a/chats?session=${initialSession}`)).status,
+    ).toBe(503);
+    app.host().invalidSnapshot = false;
+    app.host().session().lifecycle = SessionLifecycle.Creating;
+    expect(
+      (await app.api(`/hosts/a/chats?session=${initialSession}`)).status,
+    ).toBe(200);
+    app.host().session().lifecycle = SessionLifecycle.Failed;
+    expect(
+      (await app.api(`/hosts/a/chats?session=${initialSession}`)).status,
+    ).toBe(503);
+  });
 });
