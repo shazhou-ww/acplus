@@ -22,7 +22,7 @@
 - [x] **D-S01:** Start two independent real VS Code hosts
 - [ ] **D-S02:** Verify native resources and upstream authentication
 - [x] **D-S03:** Verify cleanup and preserve external evidence
-- [ ] **D-S04:** Test native VS Code login and a fresh accountless AHP
+- [ ] **D-S04:** Test native headless login and a fresh accountless AHP
       connection
 
 ### Deployment acceptance criteria
