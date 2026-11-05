@@ -5,7 +5,7 @@ import {
   type ChildProcess,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -18,10 +18,12 @@ import {
   vi,
 } from "vitest";
 import { main } from "../src/cli.js";
+import { humanOutput } from "../src/cli-output.js";
 import { config, eventually } from "./fixture.js";
 
 const directory = resolve(".test-state", randomUUID());
 const children = new Set<ChildProcess>();
+const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
 beforeAll(async () => {
   await mkdir(directory, { recursive: true });
   execFileSync(
@@ -37,6 +39,9 @@ beforeAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  if (ttyDescriptor)
+    Object.defineProperty(process.stdout, "isTTY", ttyDescriptor);
+  else Reflect.deleteProperty(process.stdout, "isTTY");
 });
 afterAll(async () => {
   for (const child of children) child.kill();
@@ -51,10 +56,14 @@ describe("thin client CLI", () => {
       "turns start|get|cancel",
     );
     await main(["--version"]);
-    expect(stdout).toHaveBeenLastCalledWith("0.1.0\n");
+    const manifest: unknown = JSON.parse(
+      await readFile("package.json", "utf8"),
+    );
+    if (!manifest || typeof manifest !== "object" || !("version" in manifest))
+      throw new Error("Invalid package manifest");
+    expect(stdout).toHaveBeenLastCalledWith(`${String(manifest.version)}\n`);
     vi.stubEnv("AHPLEX_URL", "");
     for (const args of [
-      [],
       ["validate"],
       ["tasks", "list"],
       ["health"],
@@ -257,6 +266,38 @@ describe("thin client CLI", () => {
 });
 
 describe("built CLI process", () => {
+  it("prints the most relevant help for invalid commands and missing arguments", async () => {
+    for (const [args, usage] of [
+      [["turns", "get", "--host", "a"], "Usage: ahplex turns get"],
+      [["hosts", "wrong"], "ahplex hosts start"],
+      [["serve", "--port", "bad"], "Usage: ahplex serve"],
+      [["health", "--unknown"], "Usage: ahplex health"],
+    ] as const) {
+      const expectedHelp: unknown = expect.stringContaining(usage);
+      await expect(
+        promisify(execFile)(process.execPath, [
+          join("dist", "cli.js"),
+          ...args,
+        ]),
+      ).rejects.toMatchObject({
+        code: 2,
+        stderr: expectedHelp,
+      });
+    }
+    const fetch = vi.spyOn(globalThis, "fetch");
+    const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    for (const args of [
+      [],
+      ["hosts"],
+      ["auth", "--help"],
+      ["turns", "get", "-h"],
+    ])
+      await main(args);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(stdout).toHaveBeenLastCalledWith(
+      expect.stringContaining("Usage: ahplex turns get"),
+    );
+  });
   it("validates before listening and uses exit code 2 for CLI/config errors", async () => {
     await expect(
       promisify(execFile)(process.execPath, [
@@ -272,6 +313,115 @@ describe("built CLI process", () => {
         "missing.json",
       ]),
     ).rejects.toMatchObject({ code: 2 });
+  });
+
+  describe("TTY presentation and machine output", () => {
+    it("formats lists, native identities and authentication actions without JSON noise", () => {
+      expect(
+        humanOutput("hosts list", [
+          {
+            hostId: "vscode",
+            status: "idle",
+            authMethods: [{ methodId: "login" }],
+          },
+        ]),
+      ).toContain("AUTH METHODS");
+      expect(humanOutput("sessions list", [])).toBe("No entries.\n");
+      expect(
+        humanOutput("sessions list", [
+          {
+            resource: "ahp-session:/a",
+            provider: "copilotcli",
+            title: "Test\nsession",
+          },
+        ]),
+      ).toContain("Test session");
+      expect(
+        humanOutput("sessions create", { resource: "ahp-session:/a" }),
+      ).toBe("Session created: ahp-session:/a\n");
+      expect(humanOutput("chats create", { resource: "ahp-chat:/a" })).toBe(
+        "Chat created: ahp-chat:/a\n",
+      );
+      expect(
+        humanOutput("chats list", {
+          defaultChat: "ahp-chat:/a",
+          chats: [
+            {
+              resource: "ahp-chat:/a",
+              title: "Main",
+              origin: { kind: "user" },
+            },
+          ],
+        }),
+      ).toContain("yes");
+      expect(
+        humanOutput("auth get", {
+          status: "action_required",
+          methodId: "login",
+          step: {
+            kind: "link",
+            url: "https://github.com/login/device",
+            userCode: "ABCD-1234",
+          },
+        }),
+      ).toContain("Verification code: ABCD-1234");
+      expect(
+        humanOutput("auth get", {
+          status: "action_required",
+          step: { kind: "input", stepId: "step", fields: ["token"] },
+        }),
+      ).toContain("Required fields: token");
+      expect(
+        humanOutput("auth get", {
+          status: "failed",
+          error: { code: "auth_failed", message: "Rejected" },
+        }),
+      ).toContain("auth_failed: Rejected");
+      expect(
+        humanOutput("turns get", {
+          state: "running",
+          inputRequired: true,
+          error: { code: "blocked" },
+          text: "\u001b[31mAnswer\u001b[0m",
+        }),
+      ).toContain("\nAnswer\n");
+      expect(
+        humanOutput("turns get", { state: "running", inputRequired: true }),
+      ).toContain("Waiting for user input");
+      expect(() => humanOutput("hosts list", {})).toThrow(
+        "invalid cli response",
+      );
+      expect(() => humanOutput("chats list", { chats: [null] })).toThrow();
+      expect(() => humanOutput("auth get", null)).toThrow();
+      expect(() => humanOutput("unknown", {})).toThrow();
+    });
+
+    it("uses human output only in a TTY and preserves explicit JSON and redirected output", async () => {
+      vi.stubEnv("AHPLEX_URL", "http://example.test/v1");
+      const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      Object.defineProperty(process.stdout, "isTTY", {
+        configurable: true,
+        get: () => true,
+      });
+      const tty = vi
+        .spyOn(process.stdout, "isTTY", "get")
+        .mockReturnValue(true);
+      const body = [
+        { hostId: "vscode", status: "ready", providers: ["copilotcli"] },
+      ];
+      vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+        Promise.resolve(Response.json(body)),
+      );
+      await main(["hosts", "list"]);
+      expect(stdout).toHaveBeenLastCalledWith(
+        expect.stringContaining("PROVIDERS"),
+      );
+      await main(["hosts", "list", "--json"]);
+      expect(stdout).toHaveBeenLastCalledWith(JSON.stringify(body) + "\n");
+      tty.mockReturnValue(false);
+      await main(["hosts", "list"]);
+      expect(stdout).toHaveBeenLastCalledWith(JSON.stringify(body) + "\n");
+    });
   });
 
   it("serves one stdin document through EOF with explicit overrides, then responds to client CLI", async () => {

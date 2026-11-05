@@ -12,6 +12,7 @@ import {
 } from "./common.js";
 import { loadConfig, parseJson, readStdin, type Overrides } from "./config.js";
 import { start } from "./runtime.js";
+import { humanOutput } from "./cli-output.js";
 
 const HELP = `ahplex serve --config <file|-> [--listen-host ADDRESS] [--port N] [--instance ID] [--data-dir PATH]
 ahplex health
@@ -66,9 +67,67 @@ const commands: Record<
   },
 };
 
+const descriptions: Record<string, string> = {
+  serve: "Run the service using one configuration file, or - for stdin.",
+  health: "Check whether the HTTP service is serving requests.",
+  hosts: "List configured hosts or manage their owned processes.",
+  sessions: "List or create native AHP working contexts on a host.",
+  chats: "List or create conversation threads within a session.",
+  turns: "Start, inspect or cancel an exact execution in a chat.",
+  auth: "Begin upstream login, inspect its next step or submit requested input.",
+};
+
+function help(positionals: string[]): string {
+  const command = positionals.slice(0, 2).join(" ");
+  const group = positionals[0] ?? "";
+  if (group === "serve")
+    return `Usage: ${HELP.split("\n")[0]}\n\n${descriptions.serve}\nRelative config paths use the file directory; CLI --data-dir uses the current directory.\n`;
+  const selected = commands[command];
+  if (selected !== undefined) {
+    const flags = selected.required
+      .map((name) => `--${name} <${name}>`)
+      .join(" ");
+    return `Usage: ahplex ${command}${flags ? ` ${flags}` : ""} [--url <base/v1>] [--json]\n\n${descriptions[group] ?? ""}\nURL: --url or AHPLEX_URL is required.\n--json: exact API body, including in a TTY.\n--help, -h: show this help without making a request.\n${selected.required.includes("text-file") || selected.required.includes("input-file") ? "File input: use - to read stdin.\n" : ""}`;
+  }
+  if (descriptions[group] !== undefined) {
+    const entries = Object.entries(commands)
+      .filter(([name]) => name.startsWith(`${group} `))
+      .map(
+        ([name, spec]) =>
+          `  ahplex ${name} ${spec.required.map((flag) => `--${flag} <${flag}>`).join(" ")}`,
+      );
+    return `${descriptions[group]}\n\nCommands:\n${entries.join("\n")}\n\nUse ahplex ${group} <command> --help for details.\nClient commands require --url <base/v1> or AHPLEX_URL.\n`;
+  }
+  return `AHPlex - owned AHP hosts, sessions, chats and turns\n\nUsage:\n${HELP}\nUse ahplex <group> <command> --help for details.\nTTY output is human-readable; redirected output retains the API body.\n`;
+}
+
+class CliUsageError extends ConfigurationError {
+  constructor(
+    message: string,
+    readonly usage: string,
+  ) {
+    super(message);
+  }
+}
+
 export async function main(args = process.argv.slice(2)): Promise<void> {
-  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
-    process.stdout.write(HELP);
+  try {
+    await run(args);
+  } catch (error) {
+    if (error instanceof ConfigurationError) {
+      const firstOption = args.findIndex((arg) => arg.startsWith("-"));
+      throw new CliUsageError(
+        error.message,
+        help(args.slice(0, firstOption < 0 ? args.length : firstOption)),
+      );
+    }
+    throw error;
+  }
+}
+
+async function run(args: string[]): Promise<void> {
+  if (args.length === 0) {
+    process.stdout.write(help([]));
     return;
   }
   if (args.length === 1 && args[0] === "--version") {
@@ -108,11 +167,22 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
           ].map((name) => [name, { type: "string" as const }]),
         ),
         json: { type: "boolean" },
+        help: { type: "boolean", short: "h" },
       },
     });
   } catch {
     throw new ConfigurationError("Unknown or malformed command options");
   }
+  if (
+    parsed.values.help === true ||
+    (args.length === 1 &&
+      descriptions[parsed.positionals[0] ?? ""] !== undefined &&
+      !["serve", "health"].includes(parsed.positionals[0] ?? ""))
+  ) {
+    process.stdout.write(help(parsed.positionals));
+    return;
+  }
+  delete parsed.values.help;
   const json = parsed.values.json === true;
   delete parsed.values.json;
   await execute(parsed.positionals, parsed.values, parsed.tokens, json);
@@ -296,7 +366,9 @@ async function execute(
         ? response.status === 202
           ? "Accepted; poll for progress.\n"
           : "OK\n"
-        : `${raw}\n`,
+        : process.stdout.isTTY
+          ? humanOutput(command, parseJson(raw))
+          : `${raw}\n`,
     );
 }
 
@@ -316,6 +388,8 @@ if (
     process.stderr.write(
       `ahplex: ${error instanceof ConfigurationError ? error.message : error instanceof ServiceError ? error.code : "request_failed"}\n`,
     );
+    if (error instanceof CliUsageError)
+      process.stderr.write(`\n${error.usage}`);
     process.exitCode = error instanceof ConfigurationError ? 2 : 1;
   });
 }

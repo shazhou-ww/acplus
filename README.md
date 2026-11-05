@@ -131,9 +131,13 @@ unavailable observations are errors, never fabricated success or empty
 catalogues. There is no durable ahplex execution journal.
 
 Client `--json` emits the API body unchanged, or nothing for bodyless success.
-Exit codes are 0 for successful HTTP interactions, 1 for transport/server
-errors, and 2 for invalid CLI/config input. Reading an `error` Turn is still a
-successful read. No writes are automatically retried.
+In a TTY, the default presentation uses tables for lists and readable Turn/login
+status, links, and verification codes. Redirected output remains the API body.
+Use `ahplex <group> <command> --help` for command-specific usage; invalid
+arguments automatically print relevant help to stderr with exit code 2. Exit
+codes are 0 for successful HTTP interactions, 1 for transport/server errors, and
+2 for invalid CLI/config input. Reading an `error` Turn is still a successful
+read. No writes are automatically retried.
 
 ## Explicit upstream authentication
 
@@ -333,6 +337,14 @@ does not publish, bump, or tag a release. Trusted Publishing uses GitHub OIDC:
 
 Configure that Trusted Publisher on npm and intentionally push a matching
 release tag when releasing. Do not introduce long-lived npm tokens.
+
+Stable versions publish to `latest`; `X.Y.Z-canary.DATE.SEQUENCE` versions
+publish to `canary` without changing the stable channel. To try a Canary:
+
+```bash
+npm install -g ahplex@canary
+ahplex --version
+```
 
 Use GitHub Actions for publishing and registry verification; do not run local
 publishing commands on networks that restrict npm access. To verify an existing

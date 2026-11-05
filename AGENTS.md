@@ -25,6 +25,8 @@
   long-lived npm tokens.
 - Publish only by pushing an explicitly approved `v<package.version>` release
   tag to trigger `.github/workflows/publish-npm.yaml` with GitHub Actions OIDC.
+- Stable releases use npm `latest`. Versions shaped `X.Y.Z-canary.DATE.SEQUENCE`
+  use npm `canary` and must not replace `latest`.
 - Never run `npm publish` locally, including `--dry-run`. Corporate network
   policy restricts local npm publishing; do not work around it with another
   shell, runtime, proxy, or registry.

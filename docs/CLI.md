@@ -57,6 +57,24 @@ configured `AHPLEX_URL`. No implicit localhost target. `--json` emits the API
 body without adding fields; bodyless successes emit no JSON. Human-readable
 summaries must distinguish acceptance from completion. Diagnostics go to stderr.
 
+When stdout is a TTY, lists use readable tables, created resources display their
+native URI, and Turn/authentication reads show status and actionable details.
+Login links and verification codes are displayed separately; input steps list
+the exact fields and step ID. Terminal control sequences from upstream text are
+removed. This is plain terminal presentation, not a full-screen TUI or a change
+to the HTTP contract.
+
+Redirected stdout retains the API body. `--json` always preserves the API body,
+including in a TTY; bodyless JSON responses emit nothing.
+
+Use `ahplex`, `ahplex --help`, `ahplex <group> --help`, or
+`ahplex <group> <command> --help` (also `-h`) without starting resources or
+making HTTP requests. Bare command groups display their command list. Invalid
+commands, unknown/repeated options, missing required arguments, and
+configuration/input errors print the diagnostic followed by the closest
+command/group help to stderr and exit with code 2. HTTP and runtime failures
+remain errors with exit code 1, without unrelated usage text.
+
 ```text
 ahplex health
 ahplex hosts list

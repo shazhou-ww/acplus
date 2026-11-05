@@ -59,6 +59,7 @@ jobs:
           const { appendFileSync } = require("node:fs");
           const packageJson = require("./package.json");
           const stableVersion = /^\d+\.\d+\.\d+$/u;
+          const canaryVersion = /^\d+\.\d+\.\d+-canary\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
           const expectedTag = `v${packageJson.version}`;
 
           if (packageJson.private === true) {
@@ -75,9 +76,9 @@ jobs:
             process.exit(1);
           }
 
-          if (!stableVersion.test(packageJson.version)) {
+          if (!stableVersion.test(packageJson.version) && !canaryVersion.test(packageJson.version)) {
             console.error(
-              `::error::Publishing accepts stable SemVer versions only; received ${packageJson.version}.`,
+              `::error::Expected X.Y.Z or X.Y.Z-canary.DATE.SEQUENCE; received ${packageJson.version}.`,
             );
             process.exit(1);
           }
@@ -94,7 +95,7 @@ jobs:
 
           appendFileSync(
             process.env.GITHUB_OUTPUT,
-            `name=${packageJson.name}\nversion=${packageJson.version}\n`,
+            `name=${packageJson.name}\nversion=${packageJson.version}\ndist-tag=${canaryVersion.test(packageJson.version) ? "canary" : "latest"}\n`,
           );
           NODE
 
@@ -124,8 +125,10 @@ jobs:
 
       - name: Publish package
         if: github.event_name == 'push'
+        env:
+          DIST_TAG: ${{ steps.release.outputs.dist-tag }}
         run:
-          npm publish --access public --tag latest
+          npm publish --access public --tag "$DIST_TAG"
           --registry=https://registry.npmjs.org/ --loglevel=verbose
 
       - name: Validate trusted publishing
@@ -155,12 +158,14 @@ jobs:
           const { mkdtempSync, readFileSync } = require('node:fs');
           const { join } = require('node:path');
           const version = process.env.PACKAGE_VERSION;
-          assert.match(version, /^\d+\.\d+\.\d+$/);
+          assert.match(version, /^\d+\.\d+\.\d+(?:-canary\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/);
+          const distTag = version.includes('-canary.') ? 'canary' : 'latest';
           const registry = '--registry=https://registry.npmjs.org/';
           const metadata = JSON.parse(execFileSync('npm', ['view', `ahplex@${version}`, '--json', registry], { encoding: 'utf8' }));
           assert.equal(metadata.name, 'ahplex');
           assert.equal(metadata.version, version);
-          assert.equal(metadata['dist-tags'].latest, version);
+          assert.equal(metadata['dist-tags'][distTag], version);
+          if (distTag === 'canary') assert.match(metadata['dist-tags'].latest, /^\d+\.\d+\.\d+$/, 'Canary must not replace stable latest');
           assert.ok(metadata.bin?.ahplex, 'Published metadata must retain the CLI bin');
           assert.ok(metadata.dist?.attestations?.url, 'Published version must include provenance');
           const directory = mkdtempSync(join(process.env.RUNNER_TEMP, 'ahplex-verify-'));
@@ -172,5 +177,17 @@ jobs:
           const executable = join(directory, 'node_modules', '.bin', 'ahplex');
           assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), version);
           assert.match(execFileSync(executable, ['--help'], { encoding: 'utf8' }), /turns start\|get\|cancel/);
-          console.log(JSON.stringify({ name: metadata.name, version, latest: metadata['dist-tags'].latest, bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed' }));
+          if (distTag === 'canary') {
+            assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /Usage: ahplex turns get/);
+            let rejected = false;
+            try {
+              execFileSync(executable, ['turns', 'get'], { encoding: 'utf8', stdio: 'pipe' });
+            } catch (error) {
+              assert.equal(error.status, 2);
+              assert.match(error.stderr, /Usage: ahplex turns get/);
+              rejected = true;
+            }
+            assert.ok(rejected, 'Missing arguments must fail with relevant help');
+          }
+          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed' }));
           NODE

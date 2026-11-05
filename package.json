@@ -1,6 +1,6 @@
 {
   "name": "ahplex",
-  "version": "0.1.0",
+  "version": "0.1.1-canary.20261105.1",
   "description": "Owned AHP hosts, authentication, sessions, chats, and turns over HTTP.",
   "keywords": [
     "agent",

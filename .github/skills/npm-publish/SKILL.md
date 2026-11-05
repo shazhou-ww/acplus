@@ -20,7 +20,9 @@ Release the package through `.github/workflows/publish-npm.yaml`. A pushed
   restrictions with another runtime, proxy, or registry.
 - Publish with GitHub Actions OIDC Trusted Publishing. Never create, request,
   print, store, or use an `NPM_TOKEN`, and never request an OTP.
-- Accept stable SemVer releases only: `X.Y.Z` and tag `vX.Y.Z`.
+- Accept stable `X.Y.Z` or `X.Y.Z-canary.DATE.SEQUENCE` versions with matching
+  `v<version>` tags. Canary publishes use npm `canary`; stable releases use
+  `latest`. Never move `latest` to a Canary.
 - The tag must exactly match `package.json` and point to a commit reachable from
   `origin/main`.
 - Never move, reuse, force-push, or silently delete a release tag.
@@ -78,8 +80,8 @@ Trusted Publishing.
 
 3. Determine the version:
    - Use the version explicitly requested by the user.
-   - If no version was supplied, ask the user to choose the stable SemVer
-     version. Do not infer a major-version change.
+   - If no version was supplied, ask the user to choose the stable or Canary
+     SemVer version. Do not infer a major-version change.
    - Confirm version availability through GitHub Actions registry inspection.
      The tag workflow also rejects already published versions. Never infer
      package absence from a network or TLS failure.
@@ -147,7 +149,8 @@ gh run watch <verification-run-id> --exit-status
 
 Confirm that:
 
-- `latest` points to the released stable version;
+- the matching `latest` or `canary` dist-tag points to the released version;
+- Canary verification confirms `latest` still points to a stable version;
 - entry points and binaries match `package.json`;
 - a package-specific import or CLI smoke test succeeds;
 - the GitHub Actions run succeeded;
