@@ -114,3 +114,40 @@ or configure an appropriate OAuth application and complete the returned device
 authorization interaction. Repeat D-S02 with a fresh caller-chosen turn ID and
 verify native `complete` plus the expected harmless response. Only then can
 D-AC02 and Outer World acceptance be completed.
+
+## Native login scope follow-up: pre-login baseline only
+
+On 2026-11-05, the user requested testing host-owned native login rather than
+having ahplex register an OAuth application. The procedure was synchronized in
+`623bddea9f308e82f14c7bb8baee9b36b1883d9c` before execution.
+
+An independent standalone Host used `D:\ahp-login-358d\h`; an isolated native VS
+Code Agents window used `D:\ahp-login-358d\u` and a separate extensions
+directory. Only that window was configured to reach the test Host. The installed
+CLI reported 1.145.0, commit `a717861c07586a53d83b80d742cd3f59b20a6273`.
+
+Before any native UI login:
+
+- A fresh client without the Host connection token was rejected.
+- A fresh client with only the generated transport token connected with AHP
+  1.0.0, listed an empty catalogue, and allocated a Session and Chat.
+- That client's harmless Turn ended in native `error` with a credential-related
+  error part. It sent zero AHP `authenticate` requests and no provider token.
+- The test Host instance was `4e1a5b18-66e2-4be6-a1c7-d560829230f9`.
+
+The user then requested a headless alternative before completing UI login. The
+experiment controller closed its isolated window (PID 24428) and owned Host at
+2026-11-05 01:49:28 UTC; the window process was confirmed stopped. No current
+work window was used for authentication.
+
+This is only a pre-login baseline. It does not establish whether another client
+can use provider authorization after native VS Code login. D-S04/D-AC04 remain
+open.
+
+CLI help confirms `copilot login --device-code` supports terminal-initiated
+device authorization without a VS Code GUI. That is a Copilot CLI login, not an
+established standalone VS Code Host login integration. Its default credential
+storage includes the system credential store, so a different filesystem root
+alone must not be assumed to isolate or make that credential available to the
+Host. No such login was started. `code tunnel user login` instead authenticates
+the port-forwarding service and is not proof of Copilot provider authorization.
