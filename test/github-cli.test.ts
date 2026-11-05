@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { githubCliFactory } from "../src/github-cli.js";
 import { loadConfig } from "../src/config.js";
@@ -174,7 +174,7 @@ describe("official GitHub CLI handoff (synthetic subprocesses)", () => {
       provider: "copilotcli",
       resource: "https://api.github.com",
       adapter: "github-cli",
-      options: { ...valid, command: ".\\wrapper.exe" },
+      options: { ...valid, command: `.${sep}wrapper.exe` },
     });
     const base = resolve("test");
     const loaded = await loadConfig(
