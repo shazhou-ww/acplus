@@ -142,7 +142,8 @@ work window was used for authentication.
 
 This is only a pre-login baseline. It does not establish whether another client
 can use provider authorization after native VS Code login. D-S04/D-AC04 remain
-open.
+open at this point; the headless follow-up below establishes the narrower native
+CLI-login result.
 
 CLI help confirms `copilot login --device-code` supports terminal-initiated
 device authorization without a VS Code GUI. That is a Copilot CLI login, not an
@@ -151,3 +152,92 @@ storage includes the system credential store, so a different filesystem root
 alone must not be assumed to isolate or make that credential available to the
 Host. No such login was started. `code tunnel user login` instead authenticates
 the port-forwarding service and is not proof of Copilot provider authorization.
+
+## Headless native login: authorization succeeded, Host did not inherit it
+
+The headless procedure was synchronized in
+`aecd5a8d827b6b800c5d74045b35ef1dd3387a44` before requesting authorization. The
+user completed the official Copilot CLI device flow on 2026-11-05; the native
+login command exited zero at 02:02:23 UTC. No custom OAuth application was
+registered and the experiment controller did not inspect or export a provider
+credential.
+
+### Native CLI verification
+
+An explicit existing native CLI distribution, version `1.0.96-2`, was selected
+with COPILOT_CLI_DIST_DIR. Disabling auto-update without that selector fell back
+to the bundled `1.0.73`, which lacks `--device-code`; the failed invocations
+never started authorization. Selecting the installed distribution required no
+package download or modification of the working editor.
+
+The native login and prompt used:
+
+- COPILOT_HOME: `D:\ahp-cli-login-358d\copilot`.
+- Working directory: `D:\ahp-cli-login-358d\work`, an empty test directory.
+- Isolated HOME/APPDATA/XDG paths and an empty dedicated GH_CONFIG_DIR.
+- No COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN injected by the controller.
+- Credential persistence owned by the official CLI, including its native system
+  credential store. A separate configuration directory does not claim to isolate
+  that OS store.
+
+The minimal documented noninteractive command (`-p` with a harmless no-tool,
+no-file-change prompt and `-s`) exited zero and returned exactly
+`AHP_NATIVE_CLI_OK`, with no stderr. The test working directory remained empty.
+Earlier combinations of optional CLI flags were rejected as invalid command
+format and were not counted as execution evidence.
+
+This proves that the user's native CLI authorization was valid and could serve a
+model request. It is not yet evidence that the VS Code Host is authenticated.
+
+### Fresh standalone Host and fresh accountless connections
+
+A newly started standalone VS Code Host used the same explicitly configured
+COPILOT_HOME path in its launch environment. The actual downloaded server was
+`Stable-a717861c07586a53d83b80d742cd3f59b20a6273` (VS Code 1.145.0). Host
+instance: `cae7f3fc-0570-44df-9f8b-822cffc9969e`.
+
+| Check                                                      | Result                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| WebSocket without connection token                         | Rejected                                             |
+| Fresh AHP clients with only the generated connection token | Both connected with AHP 1.0.0                        |
+| Catalogue, Session and Chat allocation                     | Succeeded                                            |
+| AHP authenticate requests sent by either probe             | Zero                                                 |
+| Provider token read/exported by the controller             | None                                                 |
+| Harmless agent execution                                   | Both turns ended in native `error`                   |
+| Matching error part                                        | `No GitHub OAuth token or Copilot HMAC key provided` |
+
+| Attempt | Session URI                                         | Chat URI                                         | Turn ID                                |
+| ------- | --------------------------------------------------- | ------------------------------------------------ | -------------------------------------- |
+| 1       | `ahp-session:/c0ccba5e-f2d4-4339-afc9-6d19965ded42` | `ahp-chat:/c0d98a81-804f-4a6e-907f-51cc248ba5ff` | `cc60f4e4-ae37-4d3c-9f55-8842d10a3f33` |
+| 2       | `ahp-session:/b99797ed-5889-4458-a48e-2d1b66ccb6db` | `ahp-chat:/471a1432-fa2a-4d45-ba35-3c26887506f4` | `0cc0bfc4-c605-4eba-9df4-f7b0b8203c1f` |
+
+The verification ran from 02:05:34 to 02:06:15 UTC. Explicit idle-stop admission
+returned 409 after failed first-turn materialization, so the controller used its
+normal service shutdown rather than claiming an idle stop. Shutdown completed,
+removed the root lock, and an independent process check found no remaining
+experiment processes. Existing editor processes were not targeted.
+
+### Exact-build explanation and conclusion
+
+The
+[Copilot provider source at the tested build](https://github.com/microsoft/vscode/blob/a717861c07586a53d83b80d742cd3f59b20a6273/src/vs/platform/agentHost/node/copilot/copilotAgent.ts#L4355)
+overrides the child runtime's COPILOT_HOME with the Host's own Copilot home. The
+[client options in that same build](https://github.com/microsoft/vscode/blob/a717861c07586a53d83b80d742cd3f59b20a6273/src/vs/platform/agentHost/node/copilot/copilotAgent.ts#L4478)
+set `useLoggedInUser: false` and supply `gitHubToken` separately. The supplied
+launch-environment path therefore did not make the runtime reuse the CLI login.
+No source patch, credential extraction, or impersonated OAuth application was
+used to change that policy.
+
+D-S04/D-AC04 are satisfied as an explicit negative integration finding: **native
+Copilot CLI login alone does not make this standalone VS Code Host execute for a
+fresh AHP client that supplies no user credential.** Transport admission and
+provider authorization are distinct.
+
+This does not claim that every native VS Code login route behaves identically;
+post-GUI-login credential sharing was not tested. It also does not satisfy
+D-AC02, which still requires a successful authenticated native AHP Turn.
+Repeating the same user login is not a remedy for the observed Host integration
+policy.
+
+The native CLI test profile is retained for follow-up under its dedicated root;
+no logout or deletion of the newly authorized credential was performed.
