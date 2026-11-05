@@ -77,6 +77,7 @@ export interface SpawnOptions {
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
   cwd?: string;
+  output?: "pipe";
 }
 
 export class OwnedProcess {
@@ -93,7 +94,7 @@ export class OwnedProcess {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       detached: process.platform !== "win32",
       windowsHide: true,
-      stdio: "ignore",
+      stdio: options.output === "pipe" ? ["ignore", "pipe", "pipe"] : "ignore",
     });
     this.done = new Promise((resolve) => {
       const finish = (): void => {

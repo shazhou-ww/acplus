@@ -41,6 +41,7 @@ interface Attempt {
   verified?: AuthVerification;
   expiresAt: number;
   credentialExpiry?: number;
+  challenge: number;
   input?: { stepId: string; fields: string[]; resolve(input: AuthInput): void };
 }
 
@@ -65,13 +66,29 @@ export class Authentication {
         this.attempt.controller.abort();
     };
     host.onAuthenticationRequired = (resource) => {
-      if (this.attempt?.binding.resource !== resource) return;
+      if (
+        this.attempt === undefined ||
+        (resource !== undefined && this.attempt.binding.resource !== resource)
+      )
+        return;
+      this.attempt.challenge++;
       delete this.attempt.verified;
       if (this.status.status === "succeeded") this.status = { status: "idle" };
     };
   }
 
   get(): AuthStatus {
+    if (
+      this.status.status === "succeeded" &&
+      this.attempt?.handle !== undefined
+    ) {
+      try {
+        this.attempt.handle.checkAlive();
+        this.host.connection(this.attempt.handle.generation);
+      } catch {
+        this.status = { status: "idle" };
+      }
+    }
     if (
       this.status.status === "succeeded" &&
       this.attempt?.credentialExpiry !== undefined &&
@@ -97,6 +114,7 @@ export class Authentication {
       processes: new ProcessOwner(),
       done: Promise.resolve(),
       expiresAt: Date.now() + this.timeoutMs,
+      challenge: 0,
     };
     this.attempt = attempt;
     this.active = true;
@@ -142,6 +160,11 @@ export class Authentication {
       Date.now() >= attempt.expiresAt
     )
       throw new ServiceError("auth_attempt_inactive", 409);
+    if (
+      attempt.credentialExpiry !== undefined &&
+      Date.now() >= attempt.credentialExpiry
+    )
+      throw new ServiceError("auth_expired", 409);
     if (attempt.handle !== undefined) {
       try {
         attempt.handle.checkAlive();
@@ -241,6 +264,7 @@ export class Authentication {
           ),
         verifyAuthentication: async (verifySignal) => {
           this.check(attempt);
+          const challenge = attempt.challenge;
           const result =
             attempt.verified ??
             (await bounded(
@@ -251,6 +275,8 @@ export class Authentication {
               AbortSignal.any([signal, verifySignal]),
             ));
           this.check(attempt);
+          if (attempt.challenge !== challenge)
+            throw new ServiceError("upstream_auth_required", 409);
           attempt.verified = result;
           return result;
         },
@@ -309,6 +335,9 @@ export class Authentication {
     signal: AbortSignal,
   ): Promise<AuthVerification> {
     this.check(attempt);
+    delete attempt.verified;
+    delete attempt.credentialExpiry;
+    const challenge = attempt.challenge;
     const handle = attempt.handle;
     if (handle === undefined)
       throw new ServiceError("auth_target_unsupported", 409);
@@ -351,6 +380,8 @@ export class Authentication {
       if (Object.keys(result).length !== 0 && result.authenticated !== true)
         throw new ServiceError("auth_invalid_response", 502);
       this.check(attempt);
+      if (attempt.challenge !== challenge)
+        throw new ServiceError("upstream_auth_required", 409);
       if (expiry !== undefined) attempt.credentialExpiry = expiry;
       attempt.verified = { status: "authenticated" };
       return attempt.verified;

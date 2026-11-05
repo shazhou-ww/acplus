@@ -237,6 +237,14 @@ export async function loadConfig(
       host.startup.command = resolve(base, host.startup.command);
     if (host.startup.cwd !== undefined)
       host.startup.cwd = resolve(base, host.startup.cwd);
+    for (const binding of host.authentication) {
+      if (
+        binding.adapter === "github-cli" &&
+        typeof binding.options.command === "string" &&
+        /[\\/]/u.test(binding.options.command)
+      )
+        binding.options.command = resolve(base, binding.options.command);
+    }
   }
   return validateConfig(effective);
 }

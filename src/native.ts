@@ -77,7 +77,7 @@ export class NativeHost {
   private readonly watchingNotifications: Promise<void>;
   private readonly watchAbort = new AbortController();
   onConnectionChange: () => void = () => {};
-  onAuthenticationRequired: (resource: string) => void = () => {};
+  onAuthenticationRequired: (resource?: string) => void = () => {};
   authActive: () => boolean = () => false;
 
   constructor(
@@ -233,6 +233,9 @@ export class NativeHost {
             try {
               return safeTransport(
                 await this.driver.openTransport(connectSignal),
+                () => {
+                  this.onAuthenticationRequired();
+                },
               );
             } catch {
               throw new ServiceError("host_transport_unavailable", 503);

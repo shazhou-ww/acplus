@@ -138,8 +138,10 @@ successful read. No writes are automatically retried.
 ## Explicit upstream authentication
 
 Standalone VS Code Agent Host does **not** make ambient editor/CLI login
-available to this service connection. ahplex never searches or copies editor,
-OS, `gh`, or other applications' credentials.
+available to this service connection. ahplex never searches ambient editor, OS,
+`gh`, or other applications' credentials. The explicit `github-cli` integration
+below accesses only a dedicated deployment-provisioned profile, through official
+CLI interfaces.
 
 `GET /hosts` advertises only configured host-local method IDs, providers and
 resource URIs. `ahp-token` reads an explicitly named environment variable or
@@ -168,6 +170,48 @@ the actual, generation-checked service connection. The AHP success reply means
 the host accepted/validated it; an RPC auth rejection is not success. Models
 existing, command exit zero, and displaying a user code are not evidence of
 authentication. No real agent turn is used as a login probe.
+
+### Official GitHub CLI login, without registering an OAuth app
+
+`github-cli` bridges the official `gh auth login --web` device flow and
+`gh auth token` export to AHP `authenticate`. Only VS Code's `copilotcli`
+provider and `https://api.github.com` are supported. Users see a GitHub link and
+one-time user code, never a password/token prompt in ahplex. The flow explicitly
+requests `read:user,user:email` in addition to gh's default scopes, and checks
+the granted scopes before submission to the Host.
+
+This requires **a dedicated no-keychain execution environment and an explicit
+profile/account**. On Windows, use a trusted launcher into an isolated Linux
+runtime, not the current user's `gh.exe`. `GH_CONFIG_DIR`, `HOME`, and
+`--insecure-storage` do **not** isolate an OS keychain: gh can still access or
+modify its global entries. Native Windows gh is rejected. See the exact
+[configuration and launcher contract](docs/HOST-CONFIG.md#official-github-cli-handoff).
+
+Configure `mode: "login"` to request user authorization; configure another
+host-local method with `mode: "reuse"` and the **same launcher, profileDir,
+account** for explicit reuse on either selected host:
+
+```powershell
+ahplex auth begin --host vscode-a --method github-login
+ahplex auth get --host vscode-a --json
+# Open only the returned GitHub URL; enter its userCode.
+# Wait for succeeded, then explicitly authorize the second connection:
+ahplex auth begin --host vscode-b --method github-reuse
+ahplex auth get --host vscode-b --json
+```
+
+`reuse` verifies the pinned account, credential source and expiry again;
+missing/revoked credentials fail without another profile or login fallback.
+After reconnect, explicitly call `github-reuse` again. No credentials are
+broadcast and no Turns are replayed. Use the native Session/Chat/Turn commands
+above to independently verify each exact Turn reaches `complete`.
+
+Custody: gh writes plaintext credentials in the dedicated profile because
+keychain access is disabled. Protect that runtime/profile with OS permissions.
+ahplex captures the official token export privately in memory and passes it only
+to the selected connection; it neither parses secret files nor publishes raw CLI
+output. Shutdown does not revoke GitHub authorization or delete the profile.
+Fixture tests are not evidence of real authorized execution.
 
 ### GitHub device authorization
 

@@ -107,6 +107,11 @@ takes an executable and argument array with `shell: false`, explicit
 environment, and an abort signal, and returns a tracked owned-process handle.
 Adapters retain these handles, not untracked child PIDs. The service can clean
 them up if adapter startup fails. This ownership contract is not an OS sandbox.
+Output is discarded by default. An explicit `output: "pipe"` allows a trusted
+authentication adapter to privately parse stdout/stderr; it must bound output,
+never forward raw diagnostics, and stop its handle on cancellation. Foreign
+processes launched through WSL or another runtime additionally require a
+deployment-verified lifetime-coupled launcher.
 
 - The core assigns `HostContext.dataDir` as `<dataDir>\hosts\<hostId>`. Built-in
   adapters do not accept a duplicate data-root option. A service-level data-root
@@ -187,7 +192,11 @@ interface AuthenticationContext {
 Each attempt gets its own adapter instance, with at most one active attempt per
 host. Reusable mechanisms do not share mutable per-account state through a
 global singleton. Flow identity and connection generations are internal, not
-public API fields.
+public API fields. The built-in `github-cli` factory keeps only a service-local
+profile/account binding and admission lease, not a token cache. Identical
+configured profiles reject concurrent attempts instead of racing login/export;
+secrets remain in the explicitly provisioned native CLI store until privately
+exported per attempt.
 
 | Type                 | Contract                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------- |
@@ -269,6 +278,12 @@ attempt-owned resources and does not claim to revoke upstream authorization.
 - Built-in `github-device`: deployment-provisioned OAuth application, device
   authorization, caller-visible user code, private token polling, and validated
   submission to the configured target.
+- Built-in `github-cli`: official gh device login and supported token export,
+  with an explicitly trusted no-keychain runtime, dedicated profile and pinned
+  account. `login` and `reuse` are explicit host-local choices; export source,
+  CLI state and known expiry are validated before AHP submission. Raw stdout and
+  stderr are bounded and filtered, not streamed to callers. See
+  [configuration, custody and launcher requirements](HOST-CONFIG.md#official-github-cli-handoff).
 - Optional host/provider-specific command adapters: fixed login
   executable/arguments, explicit supported interaction parsing, and independent
   verification.

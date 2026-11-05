@@ -219,6 +219,133 @@ Copilot-compatible authorization. No client ID or existing login is inferred.
 The snippet is not evidence that the deployment is authorized; the adapter owns
 its options schema and accepted resources.
 
+### Official GitHub CLI handoff
+
+`github-cli` uses the official GitHub CLI OAuth application; deployments need
+not register an application or supply a client ID. The following is a binding
+template, **not a bundled launcher or an assertion of runtime isolation**:
+
+```json
+{
+  "id": "github-login",
+  "provider": "copilotcli",
+  "resource": "https://api.github.com",
+  "adapter": "github-cli",
+  "options": {
+    "command": ".\\launch-gh.exe",
+    "args": [],
+    "profileDir": "/opt/ahplex/profiles/copilot",
+    "account": "YOUR-GITHUB-LOGIN",
+    "mode": "login",
+    "isolation": "dedicated-runtime"
+  }
+}
+```
+
+All six options are required; there are no ambient/default credentials.
+`command` is an executable (never a shell command or `.cmd`/`.bat` shim), `args`
+is its fixed prefix, and only the adapter appends known `gh auth` commands. API
+callers cannot choose an executable, arguments, profile, account or OAuth
+identity. File-relative command paths resolve against the config source; prefix
+arguments are opaque.
+
+**Unlike local filesystem options, `profileDir` is an absolute path in the
+launcher's execution environment**, not a path for ahplex to open or rewrite.
+For the Linux example it remains `/opt/ahplex/profiles/copilot` even when ahplex
+runs on Windows. The launcher must set `GH_CONFIG_DIR` to exactly that path;
+`gh auth status` must identify `<profileDir>/hosts.yml` as its credential
+source. Another file, environment token or keyring source is rejected.
+
+`isolation: "dedicated-runtime"` is an explicit deployment trust assertion, not
+a sandbox created or proven by ahplex. Before enabling it:
+
+- Provision a fresh, private profile in a dedicated execution environment; never
+  point at an existing editor/gh/Copilot profile. Do not share it with another
+  service instance or unrelated `gh` commands.
+- Prevent OS keychain access. Windows `gh --insecure-storage` still reads and
+  modifies global keychain entries; changing HOME/GH_CONFIG_DIR is insufficient.
+  The adapter rejects direct native Windows `gh`/`gh.exe`. A trusted Windows
+  launcher may enter a dedicated Linux runtime with no credential service.
+- Clear ambient credentials, debug settings, browser and clipboard helpers in
+  that runtime. The adapter itself passes only the operational allowlist,
+  isolation paths, explicit `GH_CONFIG_DIR`, `GH_PROMPT_DISABLED=1`, disabled
+  browser names, no-color settings and `DBUS_SESSION_BUS_ADDRESS=disabled:`. A
+  cross-OS launcher must establish the equivalent environment (e.g. `env -i`),
+  not reintroduce defaults.
+- Forward only gh's stdout/stderr without writing raw output to logs. Keep the
+  pipe non-interactive; do not open a browser. Return gh's exit status.
+- Couple all foreign subprocesses to launcher lifetime. ahplex terminates its
+  owned local PID tree on timeout/reconnect/shutdown; this alone is **not**
+  proof that WSL/remote children died. A wrapper must stop its foreign gh when
+  its caller exits, and deployment must verify timeout/shutdown cleanup.
+
+For example, a pre-provisioned WSL runtime can be selected with
+`command: "C:\\Windows\\System32\\wsl.exe"` and fixed arguments
+`--distribution <dedicated-name> --exec <owned-lifetime-wrapper>`. That wrapper
+can run
+`/usr/bin/env -i HOME=<private-home> PATH=/opt/gh/bin:/usr/bin:/bin GH_CONFIG_DIR=<profileDir> GH_PROMPT_DISABLED=1 GH_BROWSER=ahplex-browser-disabled BROWSER=ahplex-browser-disabled DBUS_SESSION_BUS_ADDRESS=disabled: NO_COLOR=1 /opt/gh/bin/gh "$@"`.
+It must also implement the lifetime rule; plain `wsl.exe --exec gh` is not a
+substitute for verified cleanup.
+
+The adapter calls:
+
+1. For `mode: "login"` only:
+   `gh auth login --hostname github.com --web --git-protocol https    --skip-ssh-key --insecure-storage --clipboard=false --scopes read:user,user:email`.
+   Only the recognized GitHub device URL and one-time user code are exposed.
+2. `gh auth status --hostname github.com --active --json hosts --no-refresh`.
+   Exit zero alone is insufficient: state must be success, the active account
+   must match `account`, the source must match this profile, and known expiry
+   must be in the future. Both `read:user` and `user:email` must be granted;
+   missing grants fail before token export/AHP submission. JSON scopes use the
+   raw comma-separated OAuth header, not gh's human-readable quoted display.
+   Unexpected quote characters are rejected, never passed as scope contents.
+   GitHub's normalized `user` grant implies these two subscopes; ahplex includes
+   those documented implications for Host literal scope matching.
+3. `gh auth token --hostname github.com --user <account> --no-refresh`,
+   privately captured, followed by AHP `authenticate` on the actual service
+   connection. No raw secret files or system credential databases are read by
+   ahplex.
+
+The integration was checked against gh **2.103.3** and Copilot CLI **1.0.96-2**
+help/source. Older versions missing these flags fail explicitly. Official
+contracts: [gh login](https://cli.github.com/manual/gh_auth_login),
+[gh token export](https://cli.github.com/manual/gh_auth_token),
+[gh JSON status](https://cli.github.com/manual/gh_auth_status),
+[Copilot authentication](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli).
+`copilot login --help` explicitly lists OAuth tokens from the GitHub CLI app. gh
+requests its normal `repo`, `read:org`, `gist` scopes **plus explicitly
+requested `read:user`, `user:email`**; Copilot subscription, organization
+policy/SSO and actual Host acceptance remain prerequisites. ahplex does not
+embed gh's OAuth client ID or perform OAuth on its behalf. The pinned VS Code
+build advertises the latter two scopes in
+[`gitHubCopilotResource`](https://github.com/microsoft/vscode/blob/a717861c07586a53d83b80d742cd3f59b20a6273/src/vs/platform/agentHost/common/githubEndpoints.ts);
+[`AgentHostAuthenticationService._getAuthToken`](https://github.com/microsoft/vscode/blob/a717861c07586a53d83b80d742cd3f59b20a6273/src/vs/platform/agentHost/node/agentHostAuthenticationService.ts)
+uses literal scope containment in its stored-token lookup. Do not assume gh's
+default grant satisfies that contract. See also
+[GitHub scope normalization](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps#normalized-scopes)
+and
+[gh JSON versus display formatting](https://github.com/cli/cli/blob/v2.103.3/pkg/cmd/auth/status/status.go).
+
+To authorize two hosts, install this `github-login` binding on the first, plus a
+`github-reuse` binding with identical options except `mode: "reuse"` on **each**
+selected host. The second host needs only `github-reuse`. Call login on the
+first, wait for `succeeded`, then call reuse on the second. Identical
+launcher/profile bindings are serialized by rejection (`auth_profile_busy`), not
+queued; conflicting configured accounts for that profile fail validation. An
+unbound host cannot use this authorization. Different launchers/path aliases are
+not inferred to name the same profile; deployment must not alias them.
+
+Credentials remain in gh's dedicated **plaintext** file store, protected by
+deployment OS permissions, and transiently in ahplex's memory/redactor. No token
+is returned by the HTTP/CLI status surface or placed in arguments. Reuse never
+triggers login, switches account, or refreshes behind the caller's back.
+Expired/missing/revoked credentials require an explicit login. Connection
+replacement clears successful state; explicitly reuse to validate and bind the
+new service connection. Authentication rejection invalidates the relevant
+success even when reported as an RPC error rather than a notification. Neither
+reconnect nor login replays Turns. Service shutdown releases owned processes,
+not GitHub authorization or the credential profile.
+
 ## Trusted plugins
 
 `plugins` contains `{ id, module, options }` entries. `module` is an explicit

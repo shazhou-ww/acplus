@@ -3,11 +3,15 @@ import type {
   JsonRpcMessage,
   TransportFrame,
 } from "@microsoft/agent-host-protocol/client";
+import { AhpErrorCodes } from "@microsoft/agent-host-protocol";
 import { record, ServiceError } from "./common.js";
 
 // The SDK supervisor logs connection exceptions. Keep untrusted RPC diagnostics
 // and credential-bearing WebSocket URLs out of those exceptions.
-export function safeTransport(transport: AhpTransport): AhpTransport {
+export function safeTransport(
+  transport: AhpTransport,
+  onAuthenticationRequired: () => void = () => {},
+): AhpTransport {
   return {
     async send(message: JsonRpcMessage | string) {
       try {
@@ -26,7 +30,9 @@ export function safeTransport(transport: AhpTransport): AhpTransport {
             : frame.kind === "text"
               ? JSON.parse(frame.text)
               : JSON.parse(Buffer.from(frame.data).toString("utf8"));
-        if (record(message) && record(message.error))
+        if (record(message) && record(message.error)) {
+          if (message.error.code === AhpErrorCodes.AuthRequired)
+            onAuthenticationRequired();
           return {
             kind: "text",
             text: JSON.stringify({
@@ -38,6 +44,7 @@ export function safeTransport(transport: AhpTransport): AhpTransport {
               },
             }),
           };
+        }
         return frame;
       } catch {
         throw new ServiceError("host_transport_receive_failed", 503);

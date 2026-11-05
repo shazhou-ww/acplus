@@ -5,6 +5,7 @@ import { deviceFactory, tokenFactory } from "./auth-adapters.js";
 import { Redactor, ServiceError } from "./common.js";
 import { validateConfig, type Config } from "./config.js";
 import { AdapterRegistry } from "./extensions.js";
+import { githubCliFactory } from "./github-cli.js";
 import { NativeHost } from "./native.js";
 import { lockDirectory, ProcessOwner, Secrets } from "./processes.js";
 import { serve } from "./server.js";
@@ -73,6 +74,7 @@ export class Service {
     registry.addHostAdapter(vscodeFactory);
     registry.addAuthenticationAdapter(tokenFactory);
     registry.addAuthenticationAdapter(deviceFactory);
+    registry.addAuthenticationAdapter(githubCliFactory());
     await registry.load(config);
     let release: (() => Promise<void>) | undefined;
     let service: Service | undefined;

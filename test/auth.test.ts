@@ -51,6 +51,81 @@ function plugin(run: AuthenticationAdapter["run"]): AdapterRegistry {
 }
 
 describe("host-scoped upstream authentication", () => {
+  it("never reuses cached success after a caught negative credential submission", async () => {
+    app = await harness(authConfig("input-test", {}), {
+      registry: plugin(async (context, signal) => {
+        await context.submitCredential({ token: "first-token" }, signal);
+        app!.host().authenticationResult = { authenticated: false };
+        await context
+          .submitCredential({ token: "second-token" }, signal)
+          .catch(() => {});
+      }),
+    });
+    await app.api("/hosts/a/auth", "POST", { methodId: "login" });
+    await eventually(
+      () => app?.service.select("a").auth.get().status === "failed",
+    );
+  });
+
+  it("rejects credentials that expire after submit but before final verification", async () => {
+    app = await harness(authConfig("input-test", {}), {
+      registry: plugin(async (context, signal) => {
+        await context.submitCredential(
+          {
+            token: "short-lived",
+            expiresAt: new Date(Date.now() + 100).toISOString(),
+          },
+          signal,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }),
+    });
+    await app.api("/hosts/a/auth", "POST", { methodId: "login" });
+    await eventually(
+      () => app?.service.select("a").auth.get().status === "expired",
+    );
+  });
+
+  it("rejects verification superseded by an upstream challenge", async () => {
+    app = await harness(authConfig("input-test", {}), {
+      registry: plugin(() => Promise.resolve()),
+    });
+    const native = app.service.select("a").native;
+    vi.spyOn(native.driver, "verifyAuthentication").mockImplementation(() => {
+      native.onAuthenticationRequired("https://api.github.com");
+      return Promise.resolve({ status: "authenticated" });
+    });
+    await app.api("/hosts/a/auth", "POST", { methodId: "login" });
+    await eventually(
+      () => app?.service.select("a").auth.get().status === "failed",
+    );
+    expect(app.service.select("a").auth.get()).toMatchObject({
+      error: { code: "upstream_auth_required" },
+    });
+  });
+
+  it("rejects an authenticate reply superseded by a challenge in flight", async () => {
+    app = await harness(authConfig("input-test", {}), {
+      registry: plugin(async (context, signal) => {
+        const pending = context.submitCredential(
+          { token: "candidate" },
+          signal,
+        );
+        app?.service
+          .select("a")
+          .native.onAuthenticationRequired("https://api.github.com");
+        await pending;
+      }),
+    });
+    await app.api("/hosts/a/auth", "POST", { methodId: "login" });
+    await eventually(
+      () => app?.service.select("a").auth.get().status === "failed",
+    );
+    expect(app.service.select("a").auth.get()).toMatchObject({
+      error: { code: "upstream_auth_required" },
+    });
+  });
+
   it("does not start on GET, only advertises bindings, and verifies token on the actual service connection", async () => {
     vi.stubEnv("AHPLEX_FIXTURE_TOKEN", "test-token-never-returned");
     app = await harness(authConfig());

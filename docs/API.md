@@ -153,6 +153,25 @@ global logout. The caller handles user interaction; the adapter handles OAuth/
 command/protocol specifics and actual success verification. Tokens are never
 status output. Stale input and stale connection-bound success are rejected.
 
+The built-in `github-cli` method uses these same endpoints, without adding a
+login resource or account API. A configured `login` method returns the official
+GitHub CLI device link/code; a configured `reuse` method verifies the same
+explicit profile/account and binds its token to that selected Host connection.
+Clients never submit a password or token for this method. See the
+[dedicated-runtime configuration](HOST-CONFIG.md#official-github-cli-handoff).
+Start login on the first host, wait for `succeeded`, then explicitly begin reuse
+on the second configured host. No unbound host receives credentials.
+
+After reconnect or an upstream authentication challenge, `idle` means the old
+success is no longer usable evidence; explicitly begin reuse, or login if its
+credential is missing/expired/rejected. Known expiry during verification cannot
+become success. `auth_profile_busy` rejects concurrent use of one CLI profile;
+`auth_cli_account_unavailable` and `auth_cli_credential_source` indicate a
+missing/rejected account or unexpected credential source without revealing raw
+diagnostics. CLI failures/timeouts never produce successful authentication. The
+normal ten-minute attempt deadline applies. A successful login is still not
+evidence of a completed Turn: submit and observe the exact native ID.
+
 ## Explicit non-goals
 
 Queueing, scheduled work, global session catalogues, task abstractions, model

@@ -9,6 +9,11 @@
 使用已安装的候选版本、较短且独立的数据目录，以及两个由服务拥有的 VS Code
 Host。经用户同意完成受支持的 GitHub 登录；需要用户参与时，仅转发授权链接和用户验证码。显式绑定授权，不操作已有编辑器会话，也不复制其凭据。
 
+当前验收使用专用、无 keychain 的 Linux
+gh 执行环境，经静态命令包装器交接凭据。在 Windows 上不直接用工作用户的
+`gh auth login`，因为 `GH_CONFIG_DIR` 和 `--insecure-storage`
+不阻止全局 keychain 访问。临时 WSL 发行版仅作为本次验收设施，不作为 AHPlex 的通用部署前提；所用二进制、目录权限、凭据存储及清理范围都需记录。
+
 ### D-S02: 通过 AHPlex 提交并观察真实的已授权 Turn
 
 发现或创建原生 Session 和 Chat，然后通过 AHPlex HTTP/CLI 接口，使用新的 turn
