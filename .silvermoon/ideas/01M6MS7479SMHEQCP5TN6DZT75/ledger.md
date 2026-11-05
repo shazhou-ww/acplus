@@ -18,12 +18,12 @@
 
 ### Deployment steps
 
-- [ ] **D-S01:** 准备隔离的 VS Code Host 并完成用户授权
-- [ ] **D-S02:** 通过 AHPlex 提交并观察真实的已授权 Turn
-- [ ] **D-S03:** 验证授权隔离和完整关闭
+- [x] **D-S01:** 准备隔离的 VS Code Host 并完成用户授权
+- [x] **D-S02:** 通过 AHPlex 提交并观察真实的已授权 Turn
+- [x] **D-S03:** 验证授权隔离和完整关闭
 
 ### Deployment acceptance criteria
 
-- [ ] **D-AC01:** 用户登录使实际 AHPlex Host 连接获得授权
-- [ ] **D-AC02:** 用户提交的 Turn 在绑定的 Host 上成功完成
-- [ ] **D-AC03:** 授权与清理始终限定在各自范围内
+- [x] **D-AC01:** 用户登录使实际 AHPlex Host 连接获得授权
+- [x] **D-AC02:** 用户提交的 Turn 在绑定的 Host 上成功完成
+- [x] **D-AC03:** 授权与清理始终限定在各自范围内
