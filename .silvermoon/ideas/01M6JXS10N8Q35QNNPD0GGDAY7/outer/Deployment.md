@@ -37,6 +37,23 @@ shutdown. Prove the captured owned processes exit, the sentinel survives, the
 root lock and generated token files disappear, and host data remains until
 explicit test cleanup. Dispose the test sentinel by its own PID afterward.
 
+### D-S04: Test native VS Code login and a fresh accountless AHP connection
+
+Use a new short private root for both an owned standalone Host and a separate VS
+Code Agents window with its own user-data and extension directories. Configure
+only that window to connect to the test Host. The user completes the native VS
+Code GitHub/Copilot sign-in; ahplex must not start OAuth, register an OAuth
+application, or obtain/copy a user access token.
+
+Compare a pre-login and post-login fresh AHP client against the same Host. The
+probe may use the Host's generated transport connection token, but must never
+send AHP authenticate or provider credentials. Separately test whether omitting
+the connection token permits the WebSocket handshake. Record connection,
+catalogue, Session/Chat creation, and exact harmless Turn outcomes
+independently. The UI must first demonstrate a successful test response on that
+same Host before claiming a post-login result. Preserve existing editor sessions
+and stop only experiment-owned processes when all user interactions finish.
+
 ## Acceptance criteria
 
 ### D-AC01: Independent real hosts are usable and isolated
@@ -53,6 +70,15 @@ API chat/turn ID. Fixture success or unauthenticated readiness is not proof.
 
 Before/after process checks prove owned processes stopped, no unrelated editor
 was stopped, and cleanup preserved intended persistent host data.
+
+### D-AC04: Native login scope is established by independent client evidence
+
+Evidence distinguishes transport admission from provider authorization and
+proves whether a fresh client that supplies no user credential can execute after
+native VS Code login. A refusal is a valid finding about login scope, not a
+completed authenticated-execution criterion. If native login cannot be
+completed, leave this criterion open and describe that prerequisite rather than
+infer the outcome.
 
 ## Evidence and blocker
 
