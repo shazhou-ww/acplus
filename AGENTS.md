@@ -23,3 +23,15 @@
   intentionally configured for publication.
 - Follow the Trusted Publishing workflow in `README.md`; do not introduce
   long-lived npm tokens.
+- Publish only by pushing an explicitly approved `v<package.version>` release
+  tag to trigger `.github/workflows/publish-npm.yaml` with GitHub Actions OIDC.
+- Never run `npm publish` locally, including `--dry-run`. Corporate network
+  policy restricts local npm publishing; do not work around it with another
+  shell, runtime, proxy, or registry.
+- Run publishing diagnostics and npm registry/package verification in GitHub
+  Actions. Use `gh workflow run publish-npm.yaml --ref main` for a nonpublishing
+  diagnostic, or add `-f verify-version=<version>` to verify an existing release
+  without publishing it again.
+- Inspect the actual registry/install result after a failed or cancelled run;
+  cancellation is not proof that publishing did not happen. Never move or reuse
+  a pushed release tag or overwrite a published version.

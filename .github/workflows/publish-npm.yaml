@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      verify-version:
+        description: "Verify an already published version without publishing"
+        required: false
+        type: string
 
 permissions: {}
 
@@ -14,6 +19,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.event_name == 'push' || inputs.verify-version == ''
     name: Publish verified tag
     runs-on: ubuntu-latest
     environment: npm
@@ -127,3 +133,44 @@ jobs:
         run: |
           npm pkg set "version=0.0.0-oidc-dry-run.${GITHUB_RUN_ID}"
           npm publish --dry-run --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose
+
+  verify:
+    name: Verify published package
+    if: github.event_name == 'workflow_dispatch' && inputs.verify-version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.11.1
+      - name: Verify registry metadata and installed CLI
+        env:
+          PACKAGE_VERSION: ${{ inputs.verify-version }}
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const assert = require('node:assert/strict');
+          const { execFileSync } = require('node:child_process');
+          const { mkdtempSync, readFileSync } = require('node:fs');
+          const { join } = require('node:path');
+          const version = process.env.PACKAGE_VERSION;
+          assert.match(version, /^\d+\.\d+\.\d+$/);
+          const registry = '--registry=https://registry.npmjs.org/';
+          const metadata = JSON.parse(execFileSync('npm', ['view', `ahplex@${version}`, '--json', registry], { encoding: 'utf8' }));
+          assert.equal(metadata.name, 'ahplex');
+          assert.equal(metadata.version, version);
+          assert.equal(metadata['dist-tags'].latest, version);
+          assert.ok(metadata.bin?.ahplex, 'Published metadata must retain the CLI bin');
+          assert.ok(metadata.dist?.attestations?.url, 'Published version must include provenance');
+          const directory = mkdtempSync(join(process.env.RUNNER_TEMP, 'ahplex-verify-'));
+          execFileSync('npm', ['install', '--prefix', directory, `ahplex@${version}`, '--ignore-scripts', '--no-audit', '--no-fund', registry], { stdio: 'inherit' });
+          const installed = join(directory, 'node_modules', 'ahplex');
+          const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
+          assert.equal(manifest.version, version);
+          assert.equal(manifest.bin.ahplex.replace(/^\.\//, ''), 'dist/cli.js');
+          const executable = join(directory, 'node_modules', '.bin', 'ahplex');
+          assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), version);
+          assert.match(execFileSync(executable, ['--help'], { encoding: 'utf8' }), /turns start\|get\|cancel/);
+          console.log(JSON.stringify({ name: metadata.name, version, latest: metadata['dist-tags'].latest, bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed' }));
+          NODE

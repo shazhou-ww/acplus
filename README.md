@@ -334,6 +334,14 @@ does not publish, bump, or tag a release. Trusted Publishing uses GitHub OIDC:
 Configure that Trusted Publisher on npm and intentionally push a matching
 release tag when releasing. Do not introduce long-lived npm tokens.
 
+Use GitHub Actions for publishing and registry verification; do not run local
+publishing commands on networks that restrict npm access. To verify an existing
+release without publishing again:
+
+```powershell
+gh workflow run publish-npm.yaml --ref main -f verify-version=0.1.0
+```
+
 Derived with `git-lineage` from `preset-npm-package`, preserving source history
 `6c693e8c8aa178224439e86ee2b904995c97bfb2` and birth
 `d74a661c6955cef5907624eb8ba130a646217174`. `.git-lineage.yaml` records the
