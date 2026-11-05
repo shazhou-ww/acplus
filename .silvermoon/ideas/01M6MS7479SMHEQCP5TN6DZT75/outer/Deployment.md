@@ -1,50 +1,39 @@
 # Deployment
 
-Preparation seed: the decisive outcome is successful native Turn execution
-through AHPlex after user authorization, not merely a successful login command.
+准备阶段的初步计划：决定性结果是用户授权后，通过 AHPlex 成功执行原生 Turn，而不只是登录命令成功。
 
 ## Steps
 
-### D-S01: Prepare isolated VS Code hosts and complete user authorization
+### D-S01: 准备隔离的 VS Code Host 并完成用户授权
 
-Use an installed candidate, short independent data directories, and two
-service-owned VS Code hosts. Complete the supported GitHub login with user
-consent, relaying only the authorization link and user code when applicable.
-Bind authorization explicitly; do not touch existing editor sessions or copy
-their credentials.
+使用已安装的候选版本、较短且独立的数据目录，以及两个由服务拥有的 VS Code
+Host。经用户同意完成受支持的 GitHub 登录；需要用户参与时，仅转发授权链接和用户验证码。显式绑定授权，不操作已有编辑器会话，也不复制其凭据。
 
-### D-S02: Submit and observe real authenticated Turns through AHPlex
+### D-S02: 通过 AHPlex 提交并观察真实的已授权 Turn
 
-Discover or create native Sessions and Chats, then submit harmless no-tool,
-no-file-change prompts through the AHPlex HTTP/CLI surface with fresh turn IDs.
-Confirm native `complete` and the requested marker for each explicitly bound
-host. The successful native CLI probe from prior research is not a substitute
-for this AHPlex-to-Host execution path.
+发现或创建原生 Session 和 Chat，然后通过 AHPlex HTTP/CLI 接口，使用新的 turn
+ID 提交无害、不调用工具、不修改文件的提示。对每个显式绑定的 Host，确认原生
+`complete`
+状态和预期的响应标记。此前调研中成功的原生 CLI 请求，不能替代这条 AHPlex 到 Host 的执行链路。
 
-### D-S03: Verify authorization isolation and clean shutdown
+### D-S03: 验证授权隔离和完整关闭
 
-Exercise an unbound or rejected-authorization case without disturbing the
-successful host. Verify the recovery behavior required by the implementation's
-connection contract, then stop only owned resources. Record sanitized versions,
-resource/turn IDs, outcomes, and credential-custody boundaries.
+在不影响已成功运行的 Host 的前提下，验证未绑定授权或授权被拒绝的情况。验证实现的连接契约所要求的恢复行为，然后仅停止自身拥有的资源。记录脱敏后的版本、资源/turn
+ID、结果及凭据保管边界。
 
 ## Acceptance criteria
 
-### D-AC01: User login authorizes the actual AHPlex Host connection
+### D-AC01: 用户登录使实际 AHPlex Host 连接获得授权
 
-Real evidence links user consent and successful upstream authentication to the
-intended connection. A valid native CLI login alone, or token acquisition
-without Host acceptance, does not pass.
+真实证据将用户同意、成功的上游认证与目标连接关联起来。仅有有效的原生 CLI 登录，或拿到 token 但未获 Host 接受，均不算通过。
 
-### D-AC02: User-submitted Turns finish successfully on the bound hosts
+### D-AC02: 用户提交的 Turn 在绑定的 Host 上成功完成
 
-After login, real AHPlex requests on two explicitly authorized VS Code hosts
-reach native `complete` for the exact submitted chat/turn IDs and return the
-expected harmless response. HTTP 202, native `error`, or fixture results fail
-this criterion.
+登录后，在两个显式授权的 VS Code
+Host 上，通过 AHPlex 发出的真实请求，针对所提交的精确 chat/turn ID 达到原生
+`complete` 状态，并返回预期的无害响应。HTTP 202、原生 `error`
+或测试桩结果均不满足此标准。
 
-### D-AC03: Authorization and cleanup remain scoped
+### D-AC03: 授权与清理始终限定在各自范围内
 
-Evidence shows credentials are not implicitly granted to an unbound host,
-failures are actionable without credential disclosure, and shutdown stops only
-operation-owned processes while preserving unrelated editor work.
+证据表明：凭据不会隐式授予未绑定的 Host；错误在不泄露凭据的前提下提供可操作的信息；关闭时仅停止本次操作拥有的进程，并保留无关编辑器中的工作。

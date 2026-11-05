@@ -1,48 +1,36 @@
 # Implementation
 
-Preparation seed: refine only after the Idea is accepted.
+准备阶段的初步计划：仅在 IDEA 获得接受后细化。
 
 ## Steps
 
-### I-S01: Establish a supported GitHub authorization handoff
+### I-S01: 明确受支持的 GitHub 授权交接方式
 
-Select and verify a headless GitHub/Copilot-compatible login and credential
-delivery mechanism using the existing authentication adapters where suitable.
-Resolve credential acquisition, custody, and supported transfer before coding a
-fallback. The prior
-[native-login findings](../../../01M6JXS10N8Q35QNNPD0GGDAY7/outer/Verification.md)
-are the baseline: successful CLI login is not Host authorization.
+选择并验证兼容 GitHub/Copilot 的无头登录与凭据传递机制，在适合时复用已有认证适配器。先明确凭据获取、保管及受支持的传递方式，再考虑实现替代方案。此前的
+[原生登录调研结果](../../../01M6JXS10N8Q35QNNPD0GGDAY7/outer/Verification.md)
+是本工作的依据：CLI 登录成功不等于 Host 已获得授权。
 
-### I-S02: Bind authorization to the intended Host connections
+### I-S02: 将授权绑定到目标 Host 连接
 
-Implement the minimal configuration and authentication lifecycle required to use
-explicit user authorization for selected VS Code hosts/resources. Preserve
-native resource operations, independent transport tokens, exact Turn identity,
-and explicit expiry/reconnect handling. Update directly related API/CLI docs.
+实现最小的配置和认证生命周期，让选定的 VS Code
+Host/资源使用明确的用户授权。保留原生资源操作、独立的连接令牌、精确的 Turn 身份，以及明确的过期和重连处理。同步更新直接相关的 API/CLI 文档。
 
-### I-S03: Independently validate the login-to-Turn path
+### I-S03: 独立验证从登录到 Turn 执行的链路
 
-Add protocol-backed tests for credential delivery, host isolation, negative
-authentication, expiry, and reconnect. Review the integrated path and run
-repository/package checks without weakening thresholds or acceptance semantics.
+增加基于协议的测试，覆盖凭据传递、Host 隔离、认证拒绝、过期和重连。审查完整链路并运行仓库及包检查，不降低检查门槛或验收标准。
 
 ## Acceptance criteria
 
-### I-AC01: The chosen login mechanism has a supported delivery contract
+### I-AC01: 所选登录机制具有受支持的授权传递契约
 
-Document the concrete login component, required application/scopes or other
-prerequisites, and authorized credential handoff. Tests demonstrate a credential
-can reach the actual AHP connection without scraping unrelated profiles or
-logging secrets; unsupported prerequisites fail explicitly.
+记录具体登录组件、所需应用及 scopes 等前置条件，以及获准的凭据交接方式。测试证明凭据能够到达实际 AHP 连接，且不抓取无关配置或将秘密写入日志；不满足受支持的前置条件时必须明确失败。
 
-### I-AC02: Connection-bound authorization is correct and isolated
+### I-AC02: 连接绑定的授权正确且相互隔离
 
-Protocol tests prove explicit host/resource selection, supported reuse only when
-configured, negative-result handling, and expiry/reconnect behavior. Neither
-identity substitution nor replay of possibly accepted Turns occurs.
+协议测试证明 Host/资源选择明确，凭据仅按配置进行受支持的复用，并正确处理认证拒绝、过期和重连。不得替换用户身份，也不得重放可能已经被接受的 Turn。
 
-### I-AC03: The implementation is ready for real authenticated acceptance
+### I-AC03: 实现具备真实认证验收条件
 
-Independent review, `pnpm check`, and package/CLI smoke checks pass. The minimal
-login-to-Turn workflow is documented and testable without a VS Code GUI. Mocked
-authentication is labelled as such and is not live deployment evidence.
+独立审查、`pnpm check`
+和包/CLI 冒烟检查通过。最小的登录到 Turn 执行流程有文档，且可在不使用 VS Code
+GUI 的情况下验证。模拟认证结果必须明确标注，不能作为真实部署证据。

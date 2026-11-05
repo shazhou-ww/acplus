@@ -4,26 +4,26 @@
 
 ### Implementation steps
 
-- [ ] **I-S01:** Establish a supported GitHub authorization handoff
-- [ ] **I-S02:** Bind authorization to the intended Host connections
-- [ ] **I-S03:** Independently validate the login-to-Turn path
+- [ ] **I-S01:** 明确受支持的 GitHub 授权交接方式
+- [ ] **I-S02:** 将授权绑定到目标 Host 连接
+- [ ] **I-S03:** 独立验证从登录到 Turn 执行的链路
 
 ### Implementation acceptance criteria
 
-- [ ] **I-AC01:** The chosen login mechanism has a supported delivery contract
-- [ ] **I-AC02:** Connection-bound authorization is correct and isolated
-- [ ] **I-AC03:** The implementation is ready for real authenticated acceptance
+- [ ] **I-AC01:** 所选登录机制具有受支持的授权传递契约
+- [ ] **I-AC02:** 连接绑定的授权正确且相互隔离
+- [ ] **I-AC03:** 实现具备真实认证验收条件
 
 ## Deployment
 
 ### Deployment steps
 
-- [ ] **D-S01:** Prepare isolated VS Code hosts and complete user authorization
-- [ ] **D-S02:** Submit and observe real authenticated Turns through AHPlex
-- [ ] **D-S03:** Verify authorization isolation and clean shutdown
+- [ ] **D-S01:** 准备隔离的 VS Code Host 并完成用户授权
+- [ ] **D-S02:** 通过 AHPlex 提交并观察真实的已授权 Turn
+- [ ] **D-S03:** 验证授权隔离和完整关闭
 
 ### Deployment acceptance criteria
 
-- [ ] **D-AC01:** User login authorizes the actual AHPlex Host connection
-- [ ] **D-AC02:** User-submitted Turns finish successfully on the bound hosts
-- [ ] **D-AC03:** Authorization and cleanup remain scoped
+- [ ] **D-AC01:** 用户登录使实际 AHPlex Host 连接获得授权
+- [ ] **D-AC02:** 用户提交的 Turn 在绑定的 Host 上成功完成
+- [ ] **D-AC03:** 授权与清理始终限定在各自范围内
