@@ -104,6 +104,14 @@ Turn ID 的真实证明，以及旧 VS Code 部署冒烟，均由协调者按 De
 - 未处理强杀后的自动锁接管；操作者必须先核对锁 PID、自有进程和 token 文件，再显式恢复。固定 AHPD 会话数据及原生 profile 不能删除。
 - 权限／输入阻塞仍按现有 MVP 暴露，不能自动批准；跨重启恢复的是资源／历史，不是中断执行或认证流程。
 
+## 推荐文档的运行时一致性
+
+用户文档将 headless 推荐限定为外部门限已接受的确切 Linux 构建，不因 PR 合并、单元测试或包版本号自动推荐，也不迁移既有 VS
+Code 配置。此次仅调整条件文案与证据引用；协调者比较运行时代码、manifest、lockfile、编译配置、公开 schema 和配置示例相对
+`8ba0c0c` 的工作树差异，结果为空。 `pnpm format:check`
+通过，已有 115 项完整质量检查仍对应相同执行输入；实际安装验收的产物及其摘要由 Outer
+World 单独记录，不把文档变化宣称为另一个已部署安装包。
+
 ## 协调者实现门限复核
 
 首次候选未被接受：协调者在真实 Ubuntu 复现 daemon 因空 paths 与 `--no-cwd`
@@ -130,5 +138,5 @@ ID，SDK 采用显式 opt-in，不改变其他 backend 的历史身份语义。
 本候选的源码、公开 schema、示例与测试已统一要求
 `1d52d06c65ec1006d548bad7c477e032b9dc6782`，并增加旧 Session-only 修复来源被拒绝的负向断言。协调者重新执行完整
 `pnpm check`：115 个测试及全部质量／包形状检查通过，aggregate
-coverage 仍分别为 95.88%、92.37%、95.77%、96.79%。这些证据支持新的实现候选，不复用旧 implementationRevision 的 acceptance。新来源的实际 Ubuntu 重验因目标 SSH 不可达而尚未完成，外部结果仍以
+coverage 仍分别为 95.88%、92.37%、95.77%、96.79%。这些证据支持新的实现候选，不复用旧 implementationRevision 的 acceptance。记录该次实现复核时，新来源的实际 Ubuntu 重验仍因目标 SSH 不可达而未完成；后续外部结果以
 [部署验证](../Verification.md) 为准。

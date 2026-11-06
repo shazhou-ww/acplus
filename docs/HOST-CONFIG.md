@@ -26,9 +26,11 @@ build before starting it. No npm download or update is performed by AHPlex. No
 official release is assumed. The Session fix in softov/ahpd#246 has merged; the
 additional recorded Turn identity fix in softov/ahpd#250 requires SDK and ACP to
 be updated together. The earlier Session-only build is rejected because its
-replayed Turn IDs do not satisfy the recovery gate. The new build passes local
-regressions; its final real-target gate is pending external connectivity. A
-future runtime update requires an explicit tested configuration/schema update.
+replayed Turn IDs do not satisfy the recovery gate. Real-target results and
+acceptance are recorded in the
+[deployment verification](../.silvermoon/ideas/01M6QHPFJ8GF5A9A5Y945FY8BH/outer/Verification.md);
+do not infer them from local regressions alone. A future runtime update requires
+an explicit tested configuration/schema update.
 
 | Host option          | Contract                                                                            |
 | -------------------- | ----------------------------------------------------------------------------------- |

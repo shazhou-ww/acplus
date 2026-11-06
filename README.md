@@ -40,7 +40,7 @@ the invocation directory. Overrides are explicit scalars and never rewrite the
 source. Unknown/repeated flags and invalid configurations fail before listening
 or spawning, with exit code 2. There is no `validate` command.
 
-### Optional experimental AHPD backend
+### Opt-in Linux AHPD headless backend
 
 The built-in `ahpd` adapter owns a supplied AHPD executable and uses the same
 official Microsoft AHP client SDK as the VS Code adapter. It does not embed
@@ -53,22 +53,25 @@ required provenance, not a binary-integrity verification.
 [softov/ahpd#246](https://github.com/softov/ahpd/pull/246) has merged, but the
 additional recorded Turn identity repair in
 [softov/ahpd#250](https://github.com/softov/ahpd/pull/250) is also required.
-Update SDK and ACP together. Neither an official release nor the final real
-deployment gate for this new build is presumed complete. Do not substitute
-floating `main`, `0.14.0`, or the earlier Session-only fix build.
+Update SDK and ACP together. No official release containing both fixes is
+presumed. Do not substitute floating `main`, `0.14.0`, or the earlier
+Session-only fix build.
 
-This is an opt-in candidate, **not yet the recommended headless deployment**:
-real AHPlex HTTP/CLI, restart/context and VS Code compatibility gates remain
-separate. See [AHPD configuration and native login](docs/HOST-CONFIG.md#ahpd).
-The latest gate results and external blockers are recorded in the
+This opt-in Linux path is the headless recommendation **only for the exact
+locked build after its recorded deployment gate is accepted**. Unit tests or a
+successful build alone do not establish that result. Existing VS Code
+configurations are not migrated or started alongside it automatically. See
+[AHPD configuration and native login](docs/HOST-CONFIG.md#ahpd). The real
+HTTP/CLI, restart/history, compatibility evidence and supported limits are
+recorded in the
 [deployment verification](.silvermoon/ideas/01M6QHPFJ8GF5A9A5Y945FY8BH/outer/Verification.md).
 The example uses generic deployment placeholders. Supply dedicated absolute
 paths and your expected GitHub `loginAccount`. An explicitly authorized
 experimental profile may be bound for reuse; never discover or copy another
 user's credentials. For fresh login, use a new dedicated `copilotProfileDir`.
 
-```powershell
-ahplex serve --config .\docs\ahpd.example.json
+```bash
+ahplex serve --config ./docs/ahpd.example.json
 ahplex hosts start --host ahpd --url http://127.0.0.1:4291/v1
 ahplex auth begin --host ahpd --method native-login --url http://127.0.0.1:4291/v1
 ahplex auth get --host ahpd --url http://127.0.0.1:4291/v1 --json
