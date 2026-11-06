@@ -31,7 +31,29 @@ Actions 可用性检查
 成功：完整检查、CLI 文件及 75 个发布文件正确，没有 manifest 自动修正。这些检查均在 Actions 内进行；没有本地 npm
 publish、长期 npm token 或 OTP。
 
-真实安装门限已通过。下一步仅推送已获准的匹配注解标签，随后仍须用 Actions 验证实际 registry、安装和来源证明，不能以 dry-run 当成发布成功。
+## 实际发布与独立安装验收
+
+获准注解标签 `v0.1.1-canary.20261106.1` 指向同步 main tip
+`80cbe5ad2206954fd938a6be753c8d3f6fc8ded8`，标签未移动或复用。发布 run
+[42202819261](https://github.com/shazhou-ww/ahplex/actions/runs/42202819261)
+全部成功，完整检查通过后由 OIDC 发布到
+`canary`。2026-11-06T10:28:23Z 官方 registry PUT 返回 202；来源证明已签名并写入
+[透明日志](https://search.sigstore.dev/?logIndex=3714993599)。
+
+首次立即验证曾返回 E404，不能将上传接受当作版本可安装证明，也没有重发。只重跑 verification-only
+run
+[42203054842](https://github.com/shazhou-ww/ahplex/actions/runs/42203054842)，于 2026-11-06T10:31:47Z 成功确认：
+
+- 实际 registry 版本为 `0.1.1-canary.20261106.1`。
+- `canary=0.1.1-canary.20261106.1`，`latest=0.1.0`。
+- registry 的 CLI bin 为 `ahplex: dist/cli.js`，
+  [npm 来源证明](https://registry.npmjs.org/-/npm/v1/attestations/ahplex@0.1.1-canary.20261106.1)
+  存在。
+- 干净目录按确切版本安装成功，公共 ESM 导入、声明文件、exports/files 形状正确。
+- CLI 版本、帮助、参数错误退出码和 init 均成功；已发布 init 在没有 docs 的安装中生成有效配置，输出 0600，不创建数据根，拒绝已有文件及两类符号链接。
+
+完整临时源码验证依赖、生成 dist 和传输 tar 已按明确路径清理；私有接受记录、已停止的隔离配置与原生历史保留，凭据未复制或删除。原服务再次返回 HTTP
+204，4293/19493 保持无监听。未对上游作任何变更。
 
 ## 限制
 
