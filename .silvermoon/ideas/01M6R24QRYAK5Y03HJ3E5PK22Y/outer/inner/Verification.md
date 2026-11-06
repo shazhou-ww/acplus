@@ -34,5 +34,18 @@ Actions 版本检查只接受官方 registry 的 HTTP
 200、匹配包名及有效 versions/tag 文档。已发布版本、HTTP
 404/错误、网络故障、无效 JSON/metadata 均失败关闭，23 项隔离 fixture 测试通过；这些测试不访问真实 registry。
 
-当前先同步功能候选，以便 Actions 执行新增的非发布可用性检查。获准版本仍为
-`0.1.1-canary.20261106.1`；尚不声称该版本可用或已发布。确认可用后再更新 manifest，并重新检查确切发布候选。
+Actions
+[42197611098](https://github.com/shazhou-ww/ahplex/actions/runs/42197611098)
+成功返回有效 registry 文档：获准版本 `0.1.1-canary.20261106.1` 可用，
+`latest=0.1.0`，此前 `canary=0.1.1-canary.20261105.1`。随后更新 manifest。
+
+Windows 后续检查出现既有合成子进程启动、认证轮询超时及临时目录 EBUSY，串行时也有时序失败；没有放宽超时、断言或覆盖率。版本检查 fixture 改为直接调用有类型的内部脚本，避免为每个响应另起 Node，仅保留一个 CLI 边界子进程。
+
+确切候选提交 `97319c93e96162b5013633d461f027ef7e5368b3` 的 tree
+`8cb438fe7af89ee4e12369facde05a7276d9e2cd` 被原样传到独立 Ubuntu 目录。原生
+`pnpm check` 全部通过：148 passed、0 skipped；statements 95.92%、branches
+92.89%、functions 95.58%、lines
+96.79%，init 模块 100%。同样通过格式、lint、严格类型检查、构建与 publint，未改变测试配置。
+
+该快照的实际候选包包含 `dist/init.js`，没有 `docs/`，SHA-256：
+`ae2fd8ce851ef7302a81da6cb4a147332fe8bb4d75b7443e5157fd853069f8a9`。这不是 npm 发布证明；后续 Actions 诊断及真实安装链路属于独立部署验收。
