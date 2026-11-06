@@ -26,6 +26,18 @@
 必须同时部署匹配 SDK 与 ACP。缺失／不稳定 messageId，或旧记录缺少原生 anchor，不能据此自动恢复旧 caller
 ID；新来源的完整 HTTP／CLI 重验仍待连接恢复。
 
+## Fork 优先验证与上游暂停
+
+用户已明确要求所有仓库均先在自己的 fork 验证，上游 PR 需另行确认。现有
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250)
+保留现状，后续没有更新其 head、评论或状态。已将本地验证过的
+`1d52d06c65ec1006d548bad7c477e032b9dc6782` 非强制快进合入 `shazhou-ww/ahpd`
+的 main，未推送 tag，也未触发或尝试 npm 发布；后续工作以 fork 为验证入口。
+
+先前上游 CI 的 processes job 有一项 `computer-servercheck`
+的 5000ms 超时，该 job 为 743 passed、1 failed、1
+skipped。该日志不等于已证明是本补丁回归，也不能当作全 CI 通过；未修改无关超时阈值或对上游重跑检查。fork 尚未返回可确认的 CI 结果，真实 Ubuntu 门限仍因 SSH 不可达而未通过。
+
 ## 此前真实运行的对象
 
 - AHPlex 源码：`edb8209c0db59fd6992fa3566124cf37847ff64f`；实现门限由协调者独立执行

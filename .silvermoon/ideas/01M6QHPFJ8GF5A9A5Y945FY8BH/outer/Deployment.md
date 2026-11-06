@@ -16,6 +16,10 @@ Turn 身份修复；不假定官方已发布匹配构建。此前 `edb8209`／`8
 `github-cli`
 reuse 方法处理凭据，协调者不接触 token。恢复身份检查使用在新构建下新建的 Session／Chat／Turn；缺失原生 messageId 或旧记录缺少 anchor 的历史不承诺追溯修复，也不通过内容或位置猜测身份。
 
+上游贡献须先在自己的 fork 验证，再取得用户明确确认后提交 PR；可优先合入 fork 的 main。现有
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250)
+按用户决定保留现状，暂不更新 head、评论或状态；后续修正仅在 fork 内推进。这不改变本 idea 由协调者自主执行门限审批的授权。
+
 ## Steps
 
 ### D-S01: 准备隔离的 Ubuntu 候选部署
