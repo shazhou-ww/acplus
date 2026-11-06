@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { MultiHostClient } from "@microsoft/agent-host-protocol/hosts";
 import { Authentication } from "./authentication.js";
 import { deviceFactory, tokenFactory } from "./auth-adapters.js";
-import { Redactor, ServiceError } from "./common.js";
+import { ConfigurationError, Redactor, ServiceError } from "./common.js";
 import { validateConfig, type Config } from "./config.js";
 import { AdapterRegistry } from "./extensions.js";
 import { githubCliFactory } from "./github-cli.js";
@@ -10,6 +10,8 @@ import { NativeHost } from "./native.js";
 import { lockDirectory, ProcessOwner, Secrets } from "./processes.js";
 import { serve } from "./server.js";
 import { vscodeFactory } from "./vscode.js";
+import { ahpdFactory } from "./ahpd.js";
+import { copilotCliFactory } from "./copilot-cli.js";
 
 export class Service {
   readonly redactor = new Redactor();
@@ -70,11 +72,26 @@ export class Service {
     } = {},
   ): Promise<Service> {
     const config = validateConfig(structuredClone(input));
+    const profiles = config.hosts
+      .filter((host) => host.adapter === "ahpd")
+      .map((host) => String(host.options.copilotProfileDir));
+    if (
+      new Set(
+        profiles.map((profile) =>
+          process.platform === "win32" ? profile.toLowerCase() : profile,
+        ),
+      ).size !== profiles.length
+    )
+      throw new ConfigurationError(
+        "ahpd profiles must not be shared between hosts",
+      );
     const registry = options.registry ?? new AdapterRegistry();
     registry.addHostAdapter(vscodeFactory);
+    registry.addHostAdapter(ahpdFactory);
     registry.addAuthenticationAdapter(tokenFactory);
     registry.addAuthenticationAdapter(deviceFactory);
     registry.addAuthenticationAdapter(githubCliFactory());
+    registry.addAuthenticationAdapter(copilotCliFactory);
     await registry.load(config);
     let release: (() => Promise<void>) | undefined;
     let service: Service | undefined;

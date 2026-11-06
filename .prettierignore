@@ -3,3 +3,6 @@ dist/
 node_modules/
 pnpm-lock.yaml
 docs/api.html
+# Content-addressed lifecycle contracts are formatted by their phase owner.
+.silvermoon/ideas/01M6QHPFJ8GF5A9A5Y945FY8BH/outer/Deployment.md
+.silvermoon/ideas/01M6QHPFJ8GF5A9A5Y945FY8BH/outer/inner/ideal/Idea.md

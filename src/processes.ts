@@ -78,6 +78,7 @@ export interface SpawnOptions {
   signal: AbortSignal;
   cwd?: string;
   output?: "pipe";
+  input?: "pipe";
 }
 
 export class OwnedProcess {
@@ -85,6 +86,7 @@ export class OwnedProcess {
   private ended = false;
   private readonly done: Promise<void>;
   private stopping: Promise<void> | undefined;
+  private failureCode = "owned_process_exited";
 
   constructor(options: SpawnOptions) {
     options.signal.throwIfAborted();
@@ -94,7 +96,11 @@ export class OwnedProcess {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       detached: process.platform !== "win32",
       windowsHide: true,
-      stdio: options.output === "pipe" ? ["ignore", "pipe", "pipe"] : "ignore",
+      stdio: [
+        options.input === "pipe" ? "pipe" : "ignore",
+        options.output === "pipe" ? "pipe" : "ignore",
+        options.output === "pipe" ? "pipe" : "ignore",
+      ],
     });
     this.done = new Promise((resolve) => {
       const finish = (): void => {
@@ -107,7 +113,11 @@ export class OwnedProcess {
   }
 
   check(): void {
-    if (this.ended) throw new ServiceError("owned_process_exited", 503);
+    if (this.ended) throw new ServiceError(this.failureCode, 503);
+  }
+
+  setFailureCode(code: string): void {
+    this.failureCode = code;
   }
 
   stop(): Promise<void> {

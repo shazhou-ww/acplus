@@ -4,6 +4,19 @@ Status: implemented CLI contract. The CLI starts the service or acts as a thin
 client of the [AHP-native HTTP API](API.md). The
 [MVP requirements](REQUIREMENTS.md) define its scope.
 
+The optional AHPD native device flow uses these same client commands in both TTY
+and JSON modes. `auth get` exposes only the device link/code or the
+`confirmPlaintextStorage` input field; there is no raw terminal passthrough. See
+[native login configuration](HOST-CONFIG.md#native-copilot-authentication). An
+explicit `"yes"` submitted to that step approves plaintext credential storage;
+no CLI mode auto-approves it. Without provider status or a strict,
+expected-account native OAuth/storage receipt, native reuse remains
+`auth_verification_unsupported`. A separately caller-requested genuine
+successful Copilot Turn can establish current-generation execution
+authorization; explicitly retry `auth begin` with the reuse method afterward. No
+hidden probe is sent, and OAuth success alone is not a subscription/entitlement
+assertion.
+
 ## Service entry point
 
 ```text

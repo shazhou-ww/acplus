@@ -195,6 +195,18 @@ export class Authentication {
       }
       this.check(attempt);
       const context: AuthenticationContext = {
+        authenticateNative: async (mode, nativeSignal) => {
+          if (this.host.driver.authenticateNative === undefined)
+            throw new ServiceError("auth_target_unsupported", 409);
+          attempt.handle = await bounded(this.host.ensure(), nativeSignal);
+          this.check(attempt);
+          await this.host.driver.authenticateNative(
+            context,
+            mode,
+            nativeSignal,
+          );
+          this.check(attempt);
+        },
         target: {
           hostId: this.host.config.id,
           provider: binding.provider,

@@ -66,6 +66,38 @@
     }
   },
   "$defs": {
+    "ahpdOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "plugin",
+        "copilotCommand",
+        "copilotProfileDir",
+        "trustedDirectories",
+        "runtimeRevision"
+      ],
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "plugin": { "type": "string", "minLength": 1 },
+        "copilotCommand": { "type": "string", "minLength": 1 },
+        "copilotProfileDir": { "type": "string", "minLength": 1 },
+        "loginAccount": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+        },
+        "trustedDirectories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "format": "uri", "pattern": "^file:/" }
+        },
+        "runtimeRevision": {
+          "const": "8c6f4645b90a05d47e43359565cb5697b011a43d",
+          "description": "Required operator-verified patched 0.15.0-rc.1 runtime provenance; not a binary checksum."
+        }
+      }
+    },
     "id": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
@@ -140,6 +172,23 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "provider", "resource", "adapter", "options"],
+      "allOf": [
+        {
+          "if": { "properties": { "adapter": { "const": "copilot-cli" } } },
+          "then": {
+            "properties": {
+              "provider": { "const": "copilot" },
+              "resource": { "const": "https://api.github.com/repos" },
+              "options": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mode"],
+                "properties": { "mode": { "enum": ["login", "reuse"] } }
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "id": {
           "$ref": "#/$defs/id"
@@ -172,6 +221,14 @@
         "lifecycle",
         "options",
         "authentication"
+      ],
+      "allOf": [
+        {
+          "if": { "properties": { "adapter": { "const": "ahpd" } } },
+          "then": {
+            "properties": { "options": { "$ref": "#/$defs/ahpdOptions" } }
+          }
+        }
       ],
       "properties": {
         "id": {

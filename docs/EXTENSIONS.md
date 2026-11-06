@@ -86,6 +86,16 @@ interface HostDriver {
     signal: AbortSignal,
   ): Promise<AuthVerification>;
   dispose(): Promise<void>;
+  configure?(
+    handle: HostClientHandle,
+    signal: AbortSignal,
+    clientId: string,
+  ): Promise<void>;
+  authenticateNative?(
+    context: AuthenticationContext,
+    mode: "login" | "reuse",
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 ```
 
@@ -145,6 +155,30 @@ The initial `vscode` adapter starts an isolated standalone Host, discovers its
 endpoint, and cleans up its owned processes. A later AHPD or other host adapter
 must implement the same lifecycle. Generic AHP transport remains shared SDK
 functionality; there is no `generic-ahp` attach-only adapter.
+
+The opt-in built-in `ahpd` adapter now implements the same lifecycle using a
+supplied pinned runtime. Optional `configure` applies only explicitly configured
+workspace policy to each connected generation before readiness; the core passes
+the current client identity for matching action acknowledgements. Optional
+`authenticateNative` delegates a native login/reuse to the host-owned profile.
+Its authentication context is generation-bound; it does not submit provider
+tokens or replace `verifyAuthentication`. The authentication adapter's matching
+context hook is unavailable on drivers that do not support native login. These
+are narrow internal hooks, not a new public API or plugin SDK.
+`SpawnOptions.input: "pipe"` is separately opt-in; trusted code may send only
+validated protocol-specific choices, never arbitrary untrusted shell input.
+
+Optional `invalidateAuthentication` clears driver-owned evidence on any auth
+challenge or connection change. Optional `observeExecution` receives only a
+caller-admitted Turn's `submitted` identity and a subsequently observed native
+`complete` with nonempty agent markdown. The core associates the Chat with its
+native Session provider; inability to associate leaves authorization unknown
+without changing Turn admission. An adapter must require its matching submitted
+ticket, provider, generation and challenge epoch; it cannot elevate historical
+or synthetic user-only completion. AHPD uses this only to recognize a
+caller-requested Copilot execution, never to launch a probe. Process owners can
+accept a trusted adapter's static `setFailureCode` classification for a dead
+child; raw stdout/stderr must never be used as that code or forwarded.
 
 ## Native resource handling stays in the core
 

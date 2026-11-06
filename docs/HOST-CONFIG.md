@@ -10,6 +10,134 @@ The [JSON Schema](host-config.schema.json) defines the common shape. The
 VS Code hosts, each with its own derived data directory. Paths, installed
 executables, and credential references must be adjusted before actual use.
 
+## AHPD
+
+The optional `ahpd` adapter is initially supported in a **dedicated Linux
+runtime only**. Native Windows/macOS startup fails with
+`host_platform_unsupported`, rather than risking a shared system keychain.
+Existing `vscode` hosts are unchanged. No migration or parallel startup is
+implicit. See [the complete Ubuntu candidate](ahpd.example.json).
+
+Supply a preinstalled, locked patched AHPD `0.15.0-rc.1` server/SDK/ACP build
+from commit `8c6f4645b90a05d47e43359565cb5697b011a43d` and Copilot `1.0.106`.
+`runtimeRevision` must equal that commit. It is an operator provenance
+assertion, not verification of the executable's bytes; validate your supplied
+build before starting it. No npm download or update is performed by AHPlex. No
+official release including softov/ahpd#246 is assumed. A future runtime update
+requires an explicit tested configuration/schema update.
+
+| Host option          | Contract                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `port`               | Dedicated loopback WebSocket port, 1–65535; cannot be an attach endpoint            |
+| `plugin`             | Absolute local path to the supplied `@ahpd/agent-acp` plugin directory              |
+| `copilotCommand`     | Absolute native executable path; no `.cmd`/`.bat` shell shim                        |
+| `copilotProfileDir`  | Explicit absolute native `COPILOT_HOME`; never discovered, read or copied by AHPlex |
+| `loginAccount`       | Optional expected GitHub login; required for a native OAuth receipt to verify login |
+| `trustedDirectories` | Nonempty explicit local Linux file URIs; also become the daemon's served paths      |
+| `runtimeRevision`    | Exact tested fix commit above                                                       |
+
+`startup.command` launches the supplied runtime. `startup.args` contains only an
+executable prefix (for example the absolute server `dist/main.js` path when
+using `node`); flags are adapter-owned. Only explicit `PATH`/`Path` overrides
+are accepted in `startup.env`. Do not point it at `ahpd start`, a service
+manager or a daemonizing wrapper: the foreground tree must remain owned.
+
+The driver writes a private `config/ahpd/config.json`, `agents/copilot.json` and
+`connection-token` beneath `hosts/<id>`. AHPD's `sessions: "file"` and host
+identity remain under the fixed config directory. Data/profile paths do not
+rotate on restart; only the transport credential rotates. Provision private
+parent directories (0700) and do not weaken existing profile permissions. On an
+unclean process kill, inspect the ownership lock, process tree **and** host's
+stale connection-token file before manually recovering; neither stale ownership
+nor foreign daemons are silently adopted.
+
+The daemon serves only `paths` derived from `trustedDirectories`, with
+`--no-cwd` preventing implicit current-directory exposure. An empty list is
+invalid in the pinned CLI. The Copilot record explicitly sets `hostTools:false`.
+Only allowlisted startup classifications (`host_configuration_paths_required`,
+`host_port_in_use`, `host_runtime_module_unavailable`) are surfaced; raw CLI
+output, paths and tokens are never forwarded as diagnostics.
+
+The environment allowlists OS executable discovery settings, isolates HOME, XDG
+directories, temp and `GH_CONFIG_DIR`, sets `COPILOT_HOME` explicitly, disables
+Copilot auto-update and disables the inherited D-Bus session. `GH_TOKEN`,
+`GITHUB_TOKEN`, `COPILOT_GITHUB_TOKEN` and ambient configuration are not
+inherited. Do not share a profile across simultaneous services; duplicate exact
+profile bindings within one service are rejected.
+
+Readiness requires the official AHP handshake, valid root snapshot and an
+acknowledged `root/configChanged` with `workspaceTrust.enabled: true` and
+exactly the configured `trustedUris`. Reconnect reapplies the explicit policy
+without spawning a daemon. An API caller's workdir is never added to trust;
+untrusted-workspace/permission blocks remain upstream errors or input-required
+state, never automatic approval.
+
+### Native Copilot authentication
+
+Bind `adapter: "copilot-cli"`, `provider: "copilot"` and
+`resource: "https://api.github.com/repos"` with `options.mode: "login"` or
+`"reuse"`. The method uses the **host's** configured native executable, profile
+and isolated environment, not independently supplied authentication paths.
+
+- `login` invokes the installed `/usr/bin/script` with a real PTY,
+  `copilot login --device-code`, and transcript target `/dev/null`. The
+  util-linux executable is required; AHPlex does not install it.
+- Only parsed `https://github.com/login/device` and device code are published.
+  Raw stdout/stderr, tokens and provider config files are never returned.
+- If Copilot asks
+  `System keychain unavailable. Store token in plaintext config file? (y/N)`,
+  the API publishes an input step with the single field
+  `confirmPlaintextStorage`. A caller must explicitly submit `"yes"` to approve.
+  Any other answer declines; absence waits until the authentication deadline. No
+  automatic `y`, synthetic keychain or global trust bypass exists.
+- `reuse` starts no login subprocess and does not inspect a token file. The
+  operator may explicitly designate an already-authorized experimental native
+  profile. This is not ambient credential discovery or credential copying. The
+  native process reads its own store when an actual Turn runs.
+- The target must be advertised by that provider on the current SDK connection.
+  `$host` is transport authentication and is not accepted for Copilot login.
+- Verification reads the supported public root config value
+  `config.values["ahpd.copilotAccount"]`. A current native `signedIn`
+  observation can verify authentication; `signedOut` rejects it. Missing,
+  unsupported or malformed account status never proves login. Copilot `1.0.106`
+  may omit ACP `authStatus`, so absence is expected and remains unknown.
+- Exit 0 alone never proves login. A native receipt requires the same exact
+  command/profile invocation to publish the device challenge, obtain explicit
+  plaintext approval and then emit the complete documented
+  `Signed in successfully as LOGIN.` line **after** confirmation, followed by
+  exit 0. LOGIN must match configured `loginAccount`; missing, partial,
+  premature, wrong-account and failed-exit receipts do not verify. This proves
+  OAuth authentication/storage, not Copilot subscription or model entitlement.
+- With no evidence, reuse reports
+  `failed/error.code: "auth_verification_unsupported"` (unknown, not proof of
+  failure). The caller may separately request a normal Turn. Only a Turn
+  admitted by this AHPlex connection, associated with `copilot` through the
+  native Session, observed with native `complete` and nonempty agent markdown
+  can establish execution authorization. Retry reuse explicitly to obtain
+  `succeeded`. Historical, user-only, cancelled, failed or uncertain Turns do
+  not establish it.
+- Evidence is scoped to the exact owned driver/profile, provider/resource,
+  connection generation and authentication-challenge epoch. Auth-required
+  errors, connection changes, stop and a new login invalidate it. Reading old
+  completed Turns after reconnect cannot restore it. No implicit Turn is sent.
+- Timeout, connection-generation change and service cancellation reap only
+  attempt-owned subprocesses. Restart does not resume a login or replay a Turn.
+
+Both human TTY and `--json` clients use the same `auth begin/get/input`
+operations. Copy the step ID from `auth get` and create an explicit UTF-8 input
+file containing `{"confirmPlaintextStorage":"yes"}` only if you approve
+plaintext storage; then run:
+
+```powershell
+ahplex auth input --host ahpd --step STEP-ID --input-file .\storage-choice.json --url http://127.0.0.1:4291/v1 --json
+```
+
+Use the discovered `copilot` provider and a configured trusted workdir for
+Session creation, then ordinary Session → Chat → Turn operations. An actual
+caller-requested Turn with native complete plus agent response is the execution
+proof. A successful independent daemon experiment or a ready host is not AHPlex
+acceptance.
+
 ## One source, one immutable registry
 
 `ahplex serve --config <file|->` reads one complete UTF-8 JSON document from a
@@ -50,7 +178,7 @@ schemas, cross-field constraints, and authentication compatibility.
 | ---------------- | ---------------------------------------------------------------- |
 | `id`             | Stable ID used as API `hostId`; unique within this instance      |
 | `label`          | Display name, never used for routing                             |
-| `adapter`        | Registered HostAdapter ID, initially `vscode`                    |
+| `adapter`        | Registered HostAdapter ID: built-in `vscode` or opt-in `ahpd`    |
 | `startup`        | Required executable, extra arguments, environment, and cwd       |
 | `lifecycle`      | Startup preparation, on-demand preparation, and startup deadline |
 | `options`        | Host-adapter-specific options, validated by that adapter         |

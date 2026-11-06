@@ -347,6 +347,22 @@ export class ProtocolHost {
     if (!record(params.action)) throw new Error("Invalid action");
     const channel = text(params.channel, "channel");
     const incoming = params.action;
+    if (incoming.type === ActionType.RootConfigChanged) {
+      await peer.transport.send({
+        jsonrpc: "2.0",
+        method: "action",
+        params: {
+          channel,
+          action: incoming,
+          serverSeq: ++this.seq,
+          origin: { clientId: peer.clientId, clientSeq: params.clientSeq },
+          ...(this.rejectDispatch === undefined
+            ? {}
+            : { rejectionReason: this.rejectDispatch }),
+        },
+      });
+      return;
+    }
     const turnId = text(incoming.turnId, "turnId");
     let action: ChatAction;
     if (incoming.type === "chat/turnStarted" && record(incoming.message)) {

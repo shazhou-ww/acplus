@@ -70,6 +70,7 @@ export class NativeHost {
   private writes = 0;
   private readonly uncertain = new Map<string, string>();
   private readonly created = new Set<string>();
+  private readonly chatProviders = new Map<string, string>();
   private closed = false;
   private readonly events;
   private readonly watching: Promise<void>;
@@ -106,9 +107,7 @@ export class NativeHost {
         next.value.hostId === this.config.id &&
         next.value.event.type === "authRequired"
       )
-        this.onAuthenticationRequired(
-          next.value.event.params.resource.resource,
-        );
+        this.authenticationRequired(next.value.event.params.resource.resource);
       if (
         next.value.hostId === this.config.id &&
         next.value.event.type === "sessionRemoved"
@@ -134,6 +133,8 @@ export class NativeHost {
       )
         continue;
       if (event.type === "connected") {
+        this.chatProviders.clear();
+        this.driver.invalidateAuthentication?.();
         this.onConnectionChange();
         if (this.preparation !== undefined) continue;
         try {
@@ -146,6 +147,7 @@ export class NativeHost {
         event.type === "stateChanged" &&
         event.state.status !== "connected"
       ) {
+        this.driver.invalidateAuthentication?.();
         this.generation = undefined;
         this.onConnectionChange();
         if (this.status === "ready") {
@@ -234,7 +236,7 @@ export class NativeHost {
               return safeTransport(
                 await this.driver.openTransport(connectSignal),
                 () => {
-                  this.onAuthenticationRequired();
+                  this.authenticationRequired();
                 },
               );
             } catch {
@@ -271,11 +273,21 @@ export class NativeHost {
     }
   }
 
+  private authenticationRequired(resource?: string): void {
+    this.driver.invalidateAuthentication?.();
+    this.onAuthenticationRequired(resource);
+  }
+
   private async synchronize(): Promise<void> {
     const handle = this.multi.client(this.config.id);
     if (handle === undefined) throw new ServiceError("host_not_ready", 503);
     const snapshot = await this.snapshot(handle, ROOT);
     requireRoot(snapshot);
+    await this.driver.configure?.(
+      handle,
+      AbortSignal.timeout(this.config.lifecycle.startupTimeoutMs),
+      this.multi.host(this.config.id)?.clientId ?? "",
+    );
     handle.checkAlive();
     if (this.closed || this.status === "stopping") return;
     this.mirror.applySnapshot(snapshot);
@@ -390,6 +402,8 @@ export class NativeHost {
     )
       throw new ServiceError("invalid_session_state", 502);
     this.mirror.applySnapshot(snapshot);
+    for (const chat of snapshot.state.chats)
+      this.chatProviders.set(chat.resource, snapshot.state.provider);
     return snapshot.state;
   }
 
@@ -585,11 +599,25 @@ export class NativeHost {
       const handle = this.connection();
       const { chat, turn } = await this.findTurn(handle, resource, id);
       if (turn === undefined) throw new ServiceError("turn_not_found", 404);
-      return turnView(
+      const view = turnView(
         turn,
         chat.activeTurn?.id === id,
         (chat.status & INPUT_NEEDED_FLAG) !== 0,
       );
+      const provider = this.chatProviders.get(resource);
+      if (
+        view.state === "complete" &&
+        view.text?.trim() &&
+        provider !== undefined
+      )
+        this.driver.observeExecution?.({
+          phase: "complete",
+          generation: handle.generation,
+          provider,
+          chat: resource,
+          turnId: id,
+        });
+      return view;
     } catch (error) {
       const safe = upstream(error);
       if (safe.status === 404) throw safe;
@@ -617,6 +645,10 @@ export class NativeHost {
           (chat.queuedMessages?.length ?? 0) > 0
         )
           throw new ServiceError("chat_busy", 409);
+        const provider =
+          this.driver.observeExecution === undefined
+            ? undefined
+            : await this.executionProvider(handle, resource);
         this.uncertain.set(resource, id);
         await this.dispatch(handle, chat, {
           type: ActionType.ChatTurnStarted,
@@ -625,10 +657,37 @@ export class NativeHost {
           message: { text, origin: { kind: MessageKind.User } },
         });
         this.uncertain.delete(resource);
+        if (provider !== undefined)
+          this.driver.observeExecution?.({
+            phase: "submitted",
+            generation: handle.generation,
+            provider,
+            chat: resource,
+            turnId: id,
+          });
       });
     } finally {
       this.admissions.delete(resource);
     }
+  }
+
+  private async executionProvider(
+    handle: HostClientHandle,
+    resource: string,
+  ): Promise<string | undefined> {
+    const known = this.chatProviders.get(resource);
+    if (known !== undefined) return known;
+    try {
+      for (const summary of await this.catalogue(handle)) {
+        const session = await this.session(handle, summary.resource);
+        if (session.chats.some((chat) => chat.resource === resource))
+          return session.provider;
+      }
+    } catch {
+      // Missing provider association leaves authorization unknown, never blocks
+      // an otherwise valid caller-requested Turn or substitutes another provider.
+    }
+    return undefined;
   }
 
   async cancelTurn(resource: string, id: string): Promise<void> {

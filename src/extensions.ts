@@ -48,6 +48,25 @@ export interface HostDriver {
     signal: AbortSignal,
   ): Promise<AuthVerification>;
   dispose(): Promise<void>;
+  configure?(
+    handle: HostClientHandle,
+    signal: AbortSignal,
+    clientId: string,
+  ): Promise<void>;
+  authenticateNative?(
+    context: AuthenticationContext,
+    mode: "login" | "reuse",
+    signal: AbortSignal,
+  ): Promise<void>;
+  invalidateAuthentication?(): void;
+  observeExecution?(observation: ExecutionObservation): void;
+}
+export interface ExecutionObservation {
+  phase: "submitted" | "complete";
+  generation: number;
+  provider: string;
+  chat: string;
+  turnId: string;
 }
 export interface HostAdapterFactory<T> {
   id: string;
@@ -81,6 +100,10 @@ export interface AuthenticationContext {
     signal: AbortSignal,
   ): Promise<AuthVerification>;
   verifyAuthentication(signal: AbortSignal): Promise<AuthVerification>;
+  authenticateNative?(
+    mode: "login" | "reuse",
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 export interface AuthenticationAdapter {
   run(context: AuthenticationContext, signal: AbortSignal): Promise<void>;

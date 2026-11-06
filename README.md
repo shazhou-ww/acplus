@@ -40,6 +40,50 @@ the invocation directory. Overrides are explicit scalars and never rewrite the
 source. Unknown/repeated flags and invalid configurations fail before listening
 or spawning, with exit code 2. There is no `validate` command.
 
+### Optional experimental AHPD backend
+
+The built-in `ahpd` adapter owns a supplied AHPD executable and uses the same
+official Microsoft AHP client SDK as the VS Code adapter. It does not embed
+AHPD, install packages, implement ACP, or change existing VS Code deployments.
+The [explicit Ubuntu example](docs/ahpd.example.json) uses the patched
+`0.15.0-rc.1` SDK/server/ACP build at upstream-fix commit
+`8c6f4645b90a05d47e43359565cb5697b011a43d` and Copilot `1.0.106`. The operator
+must provision and verify that exact build; `runtimeRevision` records the
+required provenance, not a binary-integrity verification.
+[softov/ahpd#246](https://github.com/softov/ahpd/pull/246) is not presumed
+released. Do not substitute floating `main` or the unpatched `0.14.0` runtime.
+
+This is an opt-in candidate, **not yet the recommended headless deployment**:
+real AHPlex HTTP/CLI, restart/context and VS Code compatibility gates remain
+separate. See [AHPD configuration and native login](docs/HOST-CONFIG.md#ahpd).
+The example uses generic deployment placeholders. Supply dedicated absolute
+paths and your expected GitHub `loginAccount`. An explicitly authorized
+experimental profile may be bound for reuse; never discover or copy another
+user's credentials. For fresh login, use a new dedicated `copilotProfileDir`.
+
+```powershell
+ahplex serve --config .\docs\ahpd.example.json
+ahplex hosts start --host ahpd --url http://127.0.0.1:4291/v1
+ahplex auth begin --host ahpd --method native-login --url http://127.0.0.1:4291/v1
+ahplex auth get --host ahpd --url http://127.0.0.1:4291/v1 --json
+```
+
+The initial AHPD driver requires a dedicated Linux runtime; other native
+platforms fail explicitly to avoid accidentally using a shared system keychain.
+Native device login requires Linux's installed `/usr/bin/script` (util-linux).
+It displays only the device link/code and an explicit plaintext-storage choice;
+it never records or forwards the raw terminal transcript. Windows/macOS AHPD
+startup returns `host_platform_unsupported`; a dedicated Linux runtime must be
+provisioned explicitly, not silently launched. Bind provider `copilot` to its
+advertised resource `https://api.github.com/repos`, not `$host` transport auth.
+Login/reuse succeeds only with current provider account evidence, or a strict
+native OAuth receipt after explicitly approved storage, matching `loginAccount`
+and exit 0. Otherwise authorization stays unknown. A normal caller-requested
+Turn with native complete and genuine agent markdown can establish
+generation-scoped execution authorization for later reuse. AHPlex never submits
+an implicit billable probe. OAuth authentication is not a Copilot entitlement or
+billing-account guarantee.
+
 ### Data and process ownership
 
 One configured `dataDir` is locked across all instance names. Host data lives
@@ -49,7 +93,7 @@ Windows paths; the adapter supplies an explicit private `--cli-data-dir`. It
 also supplies isolated server data, a fresh private schema-2 endpoint registry,
 `--new-instance --foreground`, a loopback ephemeral host port, and a generated
 transport credential file. It never consults an editor registry. There are no
-junctions, inherited profiles, external endpoints, or attach mode.
+junctions, implicit inherited profiles, external endpoints, or attach mode.
 
 The default child environment contains only PATH/Path, SystemRoot/SYSTEMROOT,
 WINDIR, ComSpec and PATHEXT, plus host-owned HOME, USERPROFILE, APPDATA,
