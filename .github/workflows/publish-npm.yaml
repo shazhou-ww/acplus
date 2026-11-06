@@ -129,7 +129,7 @@ jobs:
         env:
           DIST_TAG: ${{ steps.release.outputs.dist-tag }}
         run:
-          npm publish --ignore-scripts --access public --tag "$DIST_TAG"
+          npm publish --access public --tag "$DIST_TAG"
           --registry=https://registry.npmjs.org/ --loglevel=verbose
 
       - name: Validate trusted publishing
@@ -145,7 +145,7 @@ jobs:
           console.log(JSON.stringify({ version: manifest.version, bin: manifest.bin, builtCliPresent: true }));
           NODE
           set -o pipefail
-          npm publish --dry-run --ignore-scripts --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose 2>&1 | tee "$RUNNER_TEMP/oidc-dry-run.log"
+          npm publish --dry-run --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose 2>&1 | tee "$RUNNER_TEMP/oidc-dry-run.log"
           if grep -Fq 'auto-correct' "$RUNNER_TEMP/oidc-dry-run.log"; then
             echo "::error::npm must not auto-correct the release manifest."
             exit 1
