@@ -23,7 +23,26 @@ pack 顺序与私有新目录边界。
 
 外部依赖安装同时报告一条 high 审计警告，且可选 node-pty 安装脚本被阻止。不因此声称依赖审计通过；未运行强制升级、放宽 peer 检查或更改上游。真实 ACP 链路与已打包配置的验证属于部署门限。
 
-## 源候选检查
+## 最终候选与发布诊断
+
+最终输入为提交 `054c1b51b9b50c928cc606cb1aa5500c8f6eea75`，tree
+`a3faf8782a618c476ee9e55c54030ea880679ebc`；原生 Ubuntu 完整检查再次 148
+passed、0 skipped，覆盖率仍为 95.92% / 92.89% / 95.58% /
+96.79%。最终候选 tarball SHA-256：
+`f76317ea464fcd13bf3adbef76eacb3cef2e7d60d07c2af8df593c2d54ed7037`。
+
+父验收拒绝了虽成功但包含 npm
+manifest 自动修正警告的第一次诊断。跳过 prepack 的对照试验仍有同样警告，故恢复原有 prepack；并非构建竞态。根因是 npm 将
+`./dist/cli.js` 规范化为 `dist/cli.js`
+时给出误导性的移除提示。只将 bin 路径改为规范形式，命令名称、目标文件、exports 和 files 均保持。新增 CLI 存在检查和自动修正警告失败门限。
+
+Actions
+[42201209392](https://github.com/shazhou-ww/ahplex/actions/runs/42201209392)
+最终成功：全量检查及 OIDC 非发布诊断通过，75 个文件包含 CLI、ESM 入口和 init，没有 manifest 自动修正警告。首轮该 run 因既有 20ms
+device
+deadline 测试时序失败而未执行诊断；仅重跑未发布的失败 job，无标签或版本复用。此处仍不是实际 npm 发布证明。
+
+## 早期源候选检查
 
 父独立 `pnpm check` 通过：147 tests passed、1
 skipped（Windows 的 POSIX 检查）。覆盖率 statements 96.03%、branches
