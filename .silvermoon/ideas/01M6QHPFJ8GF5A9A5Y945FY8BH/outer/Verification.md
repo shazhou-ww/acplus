@@ -4,7 +4,29 @@
 
 外部门限尚未通过，不能标记完成或提升为默认推荐。真实链路已验证多个正向及负向条件，但历史 Turn 身份恢复出现上游缺陷，随后 Ubuntu 的 SSH 连接中断，剩余验证受阻。所有 D-* 条目保持未勾选。
 
-## 验证对象
+## 当前候选与已备妥的供应物
+
+追加缺陷已在 fork 修复并提交
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250)。协调者独立验证 687 个 SDK／ACP 测试通过、6 个既有测试跳过；合并最新 upstream 后，222 个聚焦测试以及 typecheck、boundary、完整 build 再次通过。该结果是本地回归证明，不是新构建的真实 Ubuntu 重验。
+
+当前 AHPlex 源码基线为 `8ba0c0caf88d1af6bac150a60a7f1b9ea30c84ec`，重新执行
+`pnpm check`
+的 115 个测试及全部质量／包形状检查通过。driver、schema、示例及负向测试统一要求来源
+`1d52d06c65ec1006d548bad7c477e032b9dc6782`，旧 Session-only 来源被明确拒绝；新实现 revision 已重新提交和接受，没有冒用旧 acceptance。
+
+本地已构建下列未发布 tarball，尚未传送至失联的真实目标：
+
+| 供应物                    | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| AHPlex 新候选             | `c5121216ef2c80f203ecb8ffc9e460ec2121ca55399dd0314a9139db26978909` |
+| AHPD ACP `0.15.0-rc.1`    | `ec186ec0d35b2323086a36bbd24d4837771ab61eeeeda2a3187306aed06b77a1` |
+| AHPD SDK `0.15.0-rc.1`    | `ebc9c2f16135980ebcc0504e07edc026a439f3c251e410364e3b803d8706ab91` |
+| AHPD server `0.15.0-rc.1` | `d1430c52fd3684bf75e05424f322bd00f00ef6fd61056c3428b2d91bbf306bf0` |
+
+必须同时部署匹配 SDK 与 ACP。缺失／不稳定 messageId，或旧记录缺少原生 anchor，不能据此自动恢复旧 caller
+ID；新来源的完整 HTTP／CLI 重验仍待连接恢复。
+
+## 此前真实运行的对象
 
 - AHPlex 源码：`edb8209c0db59fd6992fa3566124cf37847ff64f`；实现门限由协调者独立执行
   `pnpm check`，115 个测试通过，详见 [实现验证](inner/Verification.md)。
@@ -14,8 +36,8 @@
   tag。
 - 固定的 AHPD SDK／server／ACP： `0.15.0-rc.1`，来源提交
   `8c6f4645b90a05d47e43359565cb5697b011a43d`；
-  [softov/ahpd#246](https://github.com/softov/ahpd/pull/246)
-  在观察时尚未合并，11 项上游检查已通过。
+  [softov/ahpd#246](https://github.com/softov/ahpd/pull/246) 于
+  `2026-11-06T04:51:23Z` 合并；此前观察到 11 项上游检查通过。
 - Copilot CLI：`1.0.106`；Ubuntu
   Node：`v24.22.2`。全链路检查使用独立 AHPlex 数据目录、回环端口及显式指定的既有实验 profile，不读取或复制 provider
   token，也不替换原服务。
