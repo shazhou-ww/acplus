@@ -129,14 +129,27 @@ jobs:
         env:
           DIST_TAG: ${{ steps.release.outputs.dist-tag }}
         run:
-          npm publish --access public --tag "$DIST_TAG"
+          npm publish --ignore-scripts --access public --tag "$DIST_TAG"
           --registry=https://registry.npmjs.org/ --loglevel=verbose
 
       - name: Validate trusted publishing
         if: github.event_name == 'workflow_dispatch'
         run: |
           npm pkg set "version=0.0.0-oidc-dry-run.${GITHUB_RUN_ID}"
-          npm publish --dry-run --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose
+          node --input-type=commonjs <<'NODE'
+          const assert = require('node:assert/strict');
+          const { statSync } = require('node:fs');
+          const manifest = require('./package.json');
+          assert.equal(manifest.bin.ahplex.replace(/^\.\//u, ''), 'dist/cli.js');
+          assert.ok(statSync(manifest.bin.ahplex).isFile());
+          console.log(JSON.stringify({ version: manifest.version, bin: manifest.bin, builtCliPresent: true }));
+          NODE
+          set -o pipefail
+          npm publish --dry-run --ignore-scripts --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose 2>&1 | tee "$RUNNER_TEMP/oidc-dry-run.log"
+          if grep -Fq 'auto-correct' "$RUNNER_TEMP/oidc-dry-run.log"; then
+            echo "::error::npm must not auto-correct the release manifest."
+            exit 1
+          fi
 
   inspect:
     name: Check candidate version availability
