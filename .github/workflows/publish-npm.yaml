@@ -116,7 +116,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
-        run: node scripts/check-npm-version.js
+        run: node scripts/check-npm-version.ts
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -165,7 +165,7 @@ jobs:
       - name: Inspect successful registry metadata
         env:
           PACKAGE_VERSION: ${{ inputs.check-version }}
-        run: node scripts/check-npm-version.js
+        run: node scripts/check-npm-version.ts
 
   verify:
     name: Verify published package

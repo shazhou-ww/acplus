@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 const versionPattern =
   /^\d+\.\d+\.\d+(?:-canary\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/u;
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export async function assertNpmVersionAvailable(
-  name,
-  version,
-  fetcher = globalThis.fetch,
+  name: unknown,
+  version: unknown,
+  fetcher: typeof globalThis.fetch = globalThis.fetch,
 ) {
   if (typeof name !== "string" || name.length === 0)
     throw new Error("A package name is required.");
@@ -30,7 +30,7 @@ export async function assertNpmVersionAvailable(
     throw new Error(
       `Registry returned HTTP ${response.status}; version availability is unknown.`,
     );
-  const metadata = await response.json();
+  const metadata: unknown = await response.json();
   if (
     !isRecord(metadata) ||
     metadata.name !== name ||
@@ -74,9 +74,10 @@ if (
 ) {
   if (process.env.GITHUB_ACTIONS !== "true")
     throw new Error("Run npm registry verification in GitHub Actions only.");
-  const manifest = JSON.parse(
+  const manifest: unknown = JSON.parse(
     readFileSync(new URL("../package.json", import.meta.url), "utf8"),
   );
+  if (!isRecord(manifest)) throw new Error("Invalid package manifest.");
   console.log(
     JSON.stringify(
       await assertNpmVersionAvailable(
