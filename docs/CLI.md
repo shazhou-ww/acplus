@@ -17,6 +17,58 @@ authorization; explicitly retry `auth begin` with the reuse method afterward. No
 hidden probe is sent, and OAuth success alone is not a subscription/entitlement
 assertion.
 
+## Local Linux configuration initialization
+
+```text
+ahplex init --runtime-root PATH --copilot-command PATH --workspace PATH [options]
+ahplex init --help
+```
+
+This local, noninteractive command requires no `AHPLEX_URL` and makes no HTTP
+request. Help is read-only/offline on every platform; creation is Linux-only.
+There is no installer, runtime download, service start, authentication or paid
+probe. Provision the [pinned runtime](AHPD-RUNTIME.md) first.
+
+| Flag                     | Contract / default                                                             |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `--runtime-root PATH`    | Required installed prefix with `node_modules/@ahpd/{sdk,server,agent-acp}`     |
+| `--copilot-command PATH` | Required native executable, no shell shim                                      |
+| `--workspace PATH`       | Required existing directory; deliberately grants static trust                  |
+| `--config FILE`          | New output file, default `./ahplex.json`; parent must exist                    |
+| `--data-dir PATH`        | Dedicated data root, default `./.ahplex`                                       |
+| `--node-command PATH`    | Native executable, default actual `process.execPath`                           |
+| `--copilot-profile PATH` | Explicit profile selection, default `DATA/copilot-profile`; never inspected    |
+| `--login-account LOGIN`  | Optional expected GitHub login; required for native OAuth receipt verification |
+| `--instance ID`          | Default `local`; ordinary configuration identifier rules                       |
+| `--port N`               | Loopback API port 0–65535, default 4280                                        |
+| `--daemon-port N`        | Distinct loopback AHPD port 1–65535, default 19491                             |
+| `--json`                 | Emit only `{"config":"<absolute file>","host":"ahpd"}`, including in a TTY     |
+
+Relative paths use the invocation directory, including data/runtime/workspace
+and profile inputs, regardless of the output config's location. The generated
+paths are absolute. Configuration is exclusively created (0600 on Linux);
+existing files/directories and existing or dangling symlinks are never
+overwritten. There is no `--force`. Only the config file is created, not data,
+workspace, profile or missing parent directories. The small runtime layout and
+executable access checks do not prove package provenance, version or login.
+
+The sole host is `ahpd`, with `onDemand:true`, `prepareOnStartup:false`, native
+`copilot` provider and `https://api.github.com/repos` login/reuse bindings
+(`native-login`, `reuse-native-login`). No VS Code host is generated. Static
+workspace trust is not a sandbox. `runtimeRevision` records the required
+operator assertion, not binary verification.
+
+TTY output gives next steps without claiming authentication; redirected stdout
+uses the same result object as `--json`. Diagnostics plus relevant help go to
+stderr with exit code 2 for invalid/missing/unknown/repeated or wrong-command
+arguments, unsupported platform, unavailable inputs and exclusive-write
+failures. Expected filesystem input errors identify the flag and errno;
+unexpected I/O failures remain runtime errors (exit 1). Any partially written
+file is retained for operator inspection, never silently removed or overwritten.
+Success exits 0. `--port 0` requires using the actual URL printed by the later
+`serve` invocation; `init` does not reserve ports. Explicit profile reuse is
+never evidence of login by itself.
+
 ## Service entry point
 
 ```text

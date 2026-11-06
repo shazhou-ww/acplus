@@ -18,6 +18,17 @@ runtime only**. Native Windows/macOS startup fails with
 Existing `vscode` hosts are unchanged. No migration or parallel startup is
 implicit. See [the complete Ubuntu candidate](ahpd.example.json).
 
+For a local configuration without copying repository templates, use
+`ahplex init --runtime-root PREFIX --copilot-command EXECUTABLE --workspace DIRECTORY`.
+See [init flags/defaults](CLI.md#local-linux-configuration-initialization) and
+[external runtime preparation](AHPD-RUNTIME.md). It emits exactly one owned,
+on-demand `ahpd` host with native Copilot login/reuse bindings and the explicit
+workspace as its only trusted/served directory. It creates a private config
+exclusively, never overwrites an existing file or symlink, never starts a host
+or authentication, and never reads/discovers/copies profile credentials.
+Configuration does not prove login. Use dedicated data/profile roots and
+explicit API/daemon ports for isolated deployments. No VS Code host is added.
+
 Supply a preinstalled, locked patched AHPD `0.15.0-rc.1` server/SDK/ACP build
 from commit `1d52d06c65ec1006d548bad7c477e032b9dc6782` and Copilot `1.0.106`.
 `runtimeRevision` must equal that commit. It is an operator provenance

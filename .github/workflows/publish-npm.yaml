@@ -6,6 +6,10 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      check-version:
+        description: "Check candidate version availability without publishing"
+        required: false
+        type: string
       verify-version:
         description: "Verify an already published version without publishing"
         required: false
@@ -19,7 +23,9 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'push' || inputs.verify-version == ''
+    if:
+      github.event_name == 'push' || (inputs.verify-version == '' &&
+      inputs.check-version == '')
     name: Publish verified tag
     runs-on: ubuntu-latest
     environment: npm
@@ -109,13 +115,8 @@ jobs:
       - name: Reject an existing npm version
         if: github.event_name == 'push'
         env:
-          PACKAGE_NAME: ${{ steps.release.outputs.name }}
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry=https://registry.npmjs.org/ >/dev/null 2>&1; then
-            echo "::error::${PACKAGE_NAME}@${PACKAGE_VERSION} is already published."
-            exit 1
-          fi
+        run: node scripts/check-npm-version.js
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -137,9 +138,40 @@ jobs:
           npm pkg set "version=0.0.0-oidc-dry-run.${GITHUB_RUN_ID}"
           npm publish --dry-run --access public --tag oidc-dry-run --registry=https://registry.npmjs.org/ --loglevel=verbose
 
+  inspect:
+    name: Check candidate version availability
+    if: github.event_name == 'workflow_dispatch' && inputs.check-version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Validate inspection mode
+        env:
+          VERIFY_VERSION: ${{ inputs.verify-version }}
+        run: |
+          if [ -n "$VERIFY_VERSION" ]; then
+            echo "::error::Choose either check-version or verify-version, not both."
+            exit 1
+          fi
+      - name: Check out verification script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.11.1
+      - name: Inspect successful registry metadata
+        env:
+          PACKAGE_VERSION: ${{ inputs.check-version }}
+        run: node scripts/check-npm-version.js
+
   verify:
     name: Verify published package
-    if: github.event_name == 'workflow_dispatch' && inputs.verify-version != ''
+    if:
+      github.event_name == 'workflow_dispatch' && inputs.verify-version != '' &&
+      inputs.check-version == ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -155,7 +187,7 @@ jobs:
           node --input-type=commonjs <<'NODE'
           const assert = require('node:assert/strict');
           const { execFileSync } = require('node:child_process');
-          const { mkdtempSync, readFileSync } = require('node:fs');
+          const { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } = require('node:fs');
           const { join } = require('node:path');
           const version = process.env.PACKAGE_VERSION;
           assert.match(version, /^\d+\.\d+\.\d+(?:-canary\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/);
@@ -174,9 +206,16 @@ jobs:
           const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
           assert.equal(manifest.version, version);
           assert.equal(manifest.bin.ahplex.replace(/^\.\//, ''), 'dist/cli.js');
+          assert.deepEqual(manifest.files, ['dist', 'README.md', 'LICENSE']);
+          assert.deepEqual(manifest.exports, {
+            '.': { types: './dist/index.d.ts', import: './dist/index.js' },
+            './package.json': './package.json',
+          });
+          assert.ok(readFileSync(join(installed, 'dist', 'index.d.ts'), 'utf8').length > 0);
           const executable = join(directory, 'node_modules', '.bin', 'ahplex');
           assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), version);
-          assert.match(execFileSync(executable, ['--help'], { encoding: 'utf8' }), /turns start\|get\|cancel/);
+          const rootHelp = execFileSync(executable, ['--help'], { encoding: 'utf8' });
+          assert.match(rootHelp, /turns start\|get\|cancel/);
           if (distTag === 'canary') {
             assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /Usage: ahplex turns get/);
             let rejected = false;
@@ -189,5 +228,69 @@ jobs:
             }
             assert.ok(rejected, 'Missing arguments must fail with relevant help');
           }
-          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed' }));
+          const minimumInit = [0, 1, 1, 20261106, 1];
+          const parts = version.split(/-canary\.|\./u).map(Number);
+          const difference = parts.findIndex((part, index) => part !== minimumInit[index]);
+          const hasInit = difference === -1 || parts[difference] > minimumInit[difference];
+          let initConfig;
+          if (hasInit) {
+            assert.match(rootHelp, /ahplex init/);
+            assert.match(execFileSync(executable, ['init', '--help'], { encoding: 'utf8' }), /Usage: ahplex init/);
+            assert.equal(existsSync(join(installed, 'docs')), false, 'init must not depend on unshipped templates');
+            const fixture = join(directory, 'init-fixture');
+            const runtime = join(fixture, 'runtime');
+            const workspace = join(fixture, 'workspace');
+            const data = join(fixture, 'state');
+            for (const name of ['sdk', 'server', 'agent-acp']) {
+              const output = join(runtime, 'node_modules', '@ahpd', name, 'dist');
+              mkdirSync(output, { recursive: true });
+              writeFileSync(join(output, name === 'server' ? 'main.js' : 'index.js'), '');
+            }
+            writeFileSync(join(runtime, 'node_modules', '@ahpd', 'agent-acp', 'package.json'), '{}');
+            mkdirSync(workspace);
+            initConfig = join(fixture, 'ahplex.json');
+            const args = ['init', '--runtime-root', runtime, '--copilot-command', process.execPath, '--workspace', workspace, '--data-dir', data, '--login-account', 'fixture-user', '--port', '4293', '--daemon-port', '19493', '--json'];
+            const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
+            assert.deepEqual(result, { config: initConfig, host: 'ahpd' });
+            const original = readFileSync(initConfig);
+            const generated = JSON.parse(original);
+            assert.equal(statSync(initConfig).mode & 0o777, 0o600);
+            assert.equal(existsSync(data), false, 'init must not create data or profile directories');
+            assert.equal(generated.hosts.length, 1);
+            assert.equal(generated.hosts[0].adapter, 'ahpd');
+            assert.equal(generated.hosts[0].startup.command, process.execPath);
+            assert.equal(generated.hosts[0].lifecycle.onDemand, true);
+            assert.equal(generated.hosts[0].lifecycle.prepareOnStartup, false);
+            const refuse = target => {
+              let refused = false;
+              try {
+                execFileSync(executable, [...args, '--config', target], { encoding: 'utf8', stdio: 'pipe' });
+              } catch (error) {
+                assert.equal(error.status, 2);
+                assert.match(error.stderr, /exclusively/);
+                refused = true;
+              }
+              assert.ok(refused, 'Existing config and symlinks must never be replaced');
+            };
+            refuse(initConfig);
+            const link = join(fixture, 'link.json');
+            symlinkSync(initConfig, link);
+            refuse(link);
+            const missing = join(fixture, 'missing.json');
+            const dangling = join(fixture, 'dangling.json');
+            symlinkSync(missing, dangling);
+            refuse(dangling);
+            assert.equal(existsSync(missing), false);
+            assert.deepEqual(readFileSync(initConfig), original);
+          }
+          execFileSync(process.execPath, [
+            '--input-type=module', '--eval',
+            `import assert from 'node:assert/strict';
+             import { readFileSync } from 'node:fs';
+             import * as api from 'ahplex';
+             for (const name of ['start', 'loadConfig', 'validateConfig', 'ConfigurationError', 'ServiceError']) assert.equal(typeof api[name], 'function');
+             if (process.argv[1]) api.validateConfig(JSON.parse(readFileSync(process.argv[1], 'utf8')));`,
+            ...(initConfig ? [initConfig] : []),
+          ], { cwd: directory, stdio: 'inherit' });
+          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: hasInit ? 'passed' : 'not-applicable' }));
           NODE

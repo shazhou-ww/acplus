@@ -272,6 +272,10 @@ describe("built CLI process", () => {
       [["hosts", "wrong"], "ahplex hosts start"],
       [["serve", "--port", "bad"], "Usage: ahplex serve"],
       [["health", "--unknown"], "Usage: ahplex health"],
+      [["init"], "Usage: ahplex init"],
+      [["init", "--unknown"], "Usage: ahplex init"],
+      [["init", "--workspace", "a", "--workspace", "b"], "Usage: ahplex init"],
+      [["init", "--url", "http://localhost/v1"], "Usage: ahplex init"],
     ] as const) {
       const expectedHelp: unknown = expect.stringContaining(usage);
       await expect(
@@ -297,7 +301,7 @@ describe("built CLI process", () => {
     expect(stdout).toHaveBeenLastCalledWith(
       expect.stringContaining("Usage: ahplex turns get"),
     );
-  });
+  }, 15_000);
   it("validates before listening and uses exit code 2 for CLI/config errors", async () => {
     await expect(
       promisify(execFile)(process.execPath, [

@@ -57,6 +57,103 @@ Update SDK and ACP together. No official release containing both fixes is
 presumed. Do not substitute floating `main`, `0.14.0`, or the earlier
 Session-only fix build.
 
+#### Prepare an external runtime, then initialize locally
+
+The installed npm package includes `init` and this quickstart; repository
+`docs/` and example templates are **not** installed. `init` is a local,
+noninteractive config writer, not an installer. Linux runtime preparation
+requires Node.js **22.18+** (the supplied server's requirement), pnpm 11.22+,
+Git, npm and util-linux `/usr/bin/script` for device login.
+
+One standard source-to-local-tarballs setup follows. These commands download
+dependencies and build external software deliberately; `ahplex init` never does
+so. Choose a new private deployment root and retain its lockfiles and tarballs.
+No npm publishing is involved.
+
+```bash
+set -euC
+umask 077
+BASE="$HOME/ahplex-local"
+mkdir "$BASE"
+mkdir "$BASE/artifacts" "$BASE/workspace" "$BASE/runtime"
+git init "$BASE/source"
+git -C "$BASE/source" remote add origin https://github.com/shazhou-ww/ahpd.git
+git -C "$BASE/source" fetch --depth 1 origin 1d52d06c65ec1006d548bad7c477e032b9dc6782
+git -C "$BASE/source" checkout --detach FETCH_HEAD
+test "$(git -C "$BASE/source" rev-parse HEAD)" = 1d52d06c65ec1006d548bad7c477e032b9dc6782
+pnpm --dir "$BASE/source" install --frozen-lockfile
+pnpm --dir "$BASE/source/packages/sdk" pack --pack-destination "$BASE/artifacts"
+pnpm --dir "$BASE/source/packages/agent-acp" pack --pack-destination "$BASE/artifacts"
+pnpm --dir "$BASE/source/packages/server" pack --pack-destination "$BASE/artifacts"
+cat > "$BASE/runtime/package.json" <<'JSON'
+{
+  "name": "ahplex-local-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ahpd/sdk": "file:../artifacts/ahpd-sdk-0.15.0-rc.1.tgz",
+    "@ahpd/server": "file:../artifacts/ahpd-server-0.15.0-rc.1.tgz",
+    "@ahpd/agent-acp": "file:../artifacts/ahpd-agent-acp-0.15.0-rc.1.tgz",
+    "@microsoft/agent-host-protocol": "1.0.0",
+    "zod": "4.5.4"
+  },
+  "overrides": {
+    "@ahpd/sdk": "$@ahpd/sdk"
+  }
+}
+JSON
+npm install --prefix "$BASE/runtime"
+npm install --prefix "$BASE/copilot-cli" --save-exact @github/copilot@1.0.106
+npm --prefix "$BASE/runtime" ls @ahpd/sdk @ahpd/server @ahpd/agent-acp
+```
+
+Keep all three AHPD packages from that same commit: the version string
+`0.15.0-rc.1` alone does not identify the patched bytes. Confirm server and ACP
+resolve the same supplied SDK, not a nested registry replacement. The targeted
+`$@ahpd/sdk` override binds that supplied prerelease SDK: ACP's `>=0.14 <1` peer
+range otherwise excludes `0.15.0-rc.1`. It does not globally disable peer
+checks. The private manifest also pins protocol `1.0.0` and `zod` `4.5.4` for
+this assembly.
+
+The script deliberately refuses an existing `BASE` and existing output files. If
+you already have matched local tarballs, create a new private root with
+`artifacts`, `workspace` and `runtime` directories, place the three files in
+`artifacts`, then use the same private manifest and install commands. Keep the
+resulting runtime lockfile. See repository
+[runtime preparation](docs/AHPD-RUNTIME.md) for the layout and checks.
+
+Replace `YOUR-LOGIN` below with the expected GitHub account. Trust only a
+workspace you deliberately choose; static workspace trust is **not a sandbox**.
+
+```bash
+ahplex init --help
+ahplex init --runtime-root "$BASE/runtime" \
+  --copilot-command "$BASE/copilot-cli/node_modules/.bin/copilot" \
+  --workspace "$BASE/workspace" --login-account YOUR-LOGIN \
+  --config "$BASE/ahplex.json" --data-dir "$BASE/state" \
+  --port 4291 --daemon-port 19491 --json
+ahplex serve --config "$BASE/ahplex.json"
+```
+
+`init` checks only explicit local paths and the small installed-prefix layout.
+It uses the actual running Node executable by default (`--node-command` can
+select another), writes one host `ahpd`, and never starts VS Code or AHPD,
+downloads software, reads/discovers/copies credentials, or tests authorization.
+The config is exclusively created (0600 on Linux); existing files, including
+symlinks, are never replaced. Its parent must already exist. Relative inputs
+resolve from the invocation directory. Defaults are `./ahplex.json`,
+`./.ahplex`, loopback API port 4280 and daemon port 19491. Use distinct data
+roots, profiles and ports for independent deployments. `--port 0` requests an
+ephemeral API port; use the URL subsequently printed by `serve`. Redirected
+output or `--json` emits only `{"config":"<absolute file>","host":"ahpd"}`; TTY
+output instead explains the next step without claiming login success.
+
+The default profile is a dedicated `DATA/copilot-profile` path, created only
+when the host starts. To select an **already-authorized** profile explicitly,
+add `--copilot-profile /absolute/chosen/profile` (and optionally
+`--login-account chosen-login`); do not share it with another active service. No
+profile content is inspected by `init`. Configuration is not authentication.
+
 This opt-in Linux path is the headless recommendation **only for the exact
 locked build after its recorded deployment gate is accepted**. Unit tests or a
 successful build alone do not establish that result. Existing VS Code
@@ -71,11 +168,18 @@ experimental profile may be bound for reuse; never discover or copy another
 user's credentials. For fresh login, use a new dedicated `copilotProfileDir`.
 
 ```bash
-ahplex serve --config ./docs/ahpd.example.json
 ahplex hosts start --host ahpd --url http://127.0.0.1:4291/v1
 ahplex auth begin --host ahpd --method native-login --url http://127.0.0.1:4291/v1
 ahplex auth get --host ahpd --url http://127.0.0.1:4291/v1 --json
 ```
+
+For an explicitly selected authorized profile, request
+`--method reuse-native-login` instead. Reuse may honestly report
+`auth_verification_unsupported` until a separately requested genuine completed
+Turn supplies current-generation evidence; no paid probe is sent. Sessions use
+provider `copilot` and a trusted `file:///...` workspace URI, not VS Code's
+`copilotcli`. Starting the listener alone leaves this host idle
+(`onDemand:true`, `prepareOnStartup:false`).
 
 The initial AHPD driver requires a dedicated Linux runtime; other native
 platforms fail explicitly to avoid accidentally using a shared system keychain.
@@ -380,8 +484,9 @@ The flag avoids this machine's unrelated dependency reconciliation. The check
 still runs formatting, strict ESLint/TypeScript, 90% coverage thresholds, build
 and publint. No thresholds are lowered.
 
-This package remains publicly configured as `ahplex@0.1.0`; this implementation
-does not publish, bump, or tag a release. Trusted Publishing uses GitHub OIDC:
+The manifest defines the candidate version; changing it does not publish a
+release. Only a matching `v<package.version>` tag on `main` triggers
+publication. Trusted Publishing uses GitHub OIDC:
 
 - Organization/user: `shazhou-ww`
 - Repository: `ahplex`
@@ -400,8 +505,17 @@ ahplex --version
 ```
 
 Use GitHub Actions for publishing and registry verification; do not run local
-publishing commands on networks that restrict npm access. To verify an existing
-release without publishing again:
+publishing commands, including dry runs. Before pushing an approved release tag,
+check candidate availability and run the nonpublishing OIDC diagnostic:
+
+```powershell
+gh workflow run publish-npm.yaml --ref main -f check-version=0.1.1-canary.20261106.1
+gh workflow run publish-npm.yaml --ref main
+```
+
+Availability is established only by valid successful registry metadata, never by
+a failed network request. `check-version` and `verify-version` are mutually
+exclusive. To verify an existing release without publishing again:
 
 ```powershell
 gh workflow run publish-npm.yaml --ref main -f verify-version=0.1.0

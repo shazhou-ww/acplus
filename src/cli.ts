@@ -13,8 +13,10 @@ import {
 import { loadConfig, parseJson, readStdin, type Overrides } from "./config.js";
 import { start } from "./runtime.js";
 import { humanOutput } from "./cli-output.js";
+import { initialize } from "./init.js";
 
 const HELP = `ahplex serve --config <file|-> [--listen-host ADDRESS] [--port N] [--instance ID] [--data-dir PATH]
+ahplex init --runtime-root PATH --copilot-command PATH --workspace PATH [--config FILE]
 ahplex health
 ahplex hosts list|start|stop [--host ID]
 ahplex sessions list|create --host ID [--provider ID --working-directory FILE-URI]
@@ -23,6 +25,19 @@ ahplex turns start|get|cancel --host ID --chat URI --turn ID [--text-file FILE|-
 ahplex auth begin|get|input --host ID [--method ID | --step ID --input-file FILE|-]
 Client commands require --url BASE/v1 or AHPLEX_URL. --json emits only API bodies.
 `;
+const initFlags = [
+  "runtime-root",
+  "copilot-command",
+  "workspace",
+  "config",
+  "data-dir",
+  "node-command",
+  "copilot-profile",
+  "login-account",
+  "instance",
+  "port",
+  "daemon-port",
+];
 const commands: Record<
   string,
   { method: string; path: string; required: string[] }
@@ -69,6 +84,7 @@ const commands: Record<
 
 const descriptions: Record<string, string> = {
   serve: "Run the service using one configuration file, or - for stdin.",
+  init: "Create a private, static, on-demand Linux AHPD configuration, without starting or authenticating anything.",
   health: "Check whether the HTTP service is serving requests.",
   hosts: "List configured hosts or manage their owned processes.",
   sessions: "List or create native AHP working contexts on a host.",
@@ -82,6 +98,8 @@ function help(positionals: string[]): string {
   const group = positionals[0] ?? "";
   if (group === "serve")
     return `Usage: ${HELP.split("\n")[0]}\n\n${descriptions.serve}\nRelative config paths use the file directory; CLI --data-dir uses the current directory.\n`;
+  if (group === "init")
+    return `Usage: ahplex init --runtime-root PATH --copilot-command PATH --workspace PATH [options]\n\n${descriptions.init}\nRequired: --runtime-root installed prefix containing node_modules/@ahpd/{sdk,server,agent-acp}; --copilot-command native executable; --workspace existing trusted directory.\nOptions:\n  --config FILE          New file only (default: ./ahplex.json); parent must exist\n  --data-dir PATH        Dedicated service data (default: ./.ahplex)\n  --node-command PATH    Native Node executable (default: current process.execPath)\n  --copilot-profile PATH Explicit authorized profile, or new dedicated profile (default: DATA/copilot-profile)\n  --login-account LOGIN  Optional expected GitHub login; needed for native login receipt verification\n  --instance ID          Service identity (default: local)\n  --port N               Loopback API port, 0-65535 (default: 4280)\n  --daemon-port N        Distinct loopback AHPD port, 1-65535 (default: 19491)\n  --json                 Emit {config, host}, also in a TTY\n  --help, -h             Offline help; no setup side effects\nAll relative paths use the invocation directory. Requires preinstalled matching AHPD revision 1d52d06c65ec1006d548bad7c477e032b9dc6782 and Copilot 1.0.106; file checks do not verify provenance or credentials. No downloads, profile inspection, login, probe or service startup.\n`;
   const selected = commands[command];
   if (selected !== undefined) {
     const flags = selected.required
@@ -164,6 +182,13 @@ async function run(args: string[]): Promise<void> {
             "method",
             "step",
             "input-file",
+            "runtime-root",
+            "copilot-command",
+            "workspace",
+            "node-command",
+            "copilot-profile",
+            "login-account",
+            "daemon-port",
           ].map((name) => [name, { type: "string" as const }]),
         ),
         json: { type: "boolean" },
@@ -173,11 +198,26 @@ async function run(args: string[]): Promise<void> {
   } catch {
     throw new ConfigurationError("Unknown or malformed command options");
   }
+  const names = parsed.tokens
+    .filter((token) => token.kind === "option")
+    .map((token) => token.name);
+  if (new Set(names).size !== names.length)
+    throw new ConfigurationError("Repeated options are not allowed");
+  if (parsed.positionals[0] === "init") {
+    if (parsed.positionals.length !== 1)
+      throw new ConfigurationError("init does not accept subcommands");
+    if (
+      names.some(
+        (name) => !initFlags.includes(name) && !["json", "help"].includes(name),
+      )
+    )
+      throw new ConfigurationError("Unexpected init option");
+  }
   if (
     parsed.values.help === true ||
     (args.length === 1 &&
       descriptions[parsed.positionals[0] ?? ""] !== undefined &&
-      !["serve", "health"].includes(parsed.positionals[0] ?? ""))
+      !["serve", "health", "init"].includes(parsed.positionals[0] ?? ""))
   ) {
     process.stdout.write(help(parsed.positionals));
     return;
@@ -185,20 +225,14 @@ async function run(args: string[]): Promise<void> {
   delete parsed.values.help;
   const json = parsed.values.json === true;
   delete parsed.values.json;
-  await execute(parsed.positionals, parsed.values, parsed.tokens, json);
+  await execute(parsed.positionals, parsed.values, json);
 }
 
 async function execute(
   positionals: string[],
   values: Record<string, string | boolean | (string | boolean)[] | undefined>,
-  tokens: { kind: string; name?: string }[],
   json: boolean,
 ): Promise<void> {
-  const names = tokens
-    .filter((token) => token.kind === "option")
-    .map((token) => token.name);
-  if (new Set(names).size !== names.length)
-    throw new ConfigurationError("Repeated options are not allowed");
   const get = (name: string): string => {
     const value = values[name];
     if (typeof value !== "string" || value === "")
@@ -208,6 +242,29 @@ async function execute(
     return value;
   };
   const command = positionals.join(" ");
+  if (command === "init") {
+    const optional = (name: string): string | undefined =>
+      values[name] === undefined ? undefined : get(name);
+    const result = await initialize({
+      runtimeRoot: get("runtime-root"),
+      copilotCommand: get("copilot-command"),
+      workspace: get("workspace"),
+      config: optional("config"),
+      dataDir: optional("data-dir"),
+      nodeCommand: optional("node-command"),
+      copilotProfile: optional("copilot-profile"),
+      loginAccount: optional("login-account"),
+      instance: optional("instance"),
+      port: optional("port"),
+      daemonPort: optional("daemon-port"),
+    });
+    process.stdout.write(
+      json || !process.stdout.isTTY
+        ? `${JSON.stringify(result)}\n`
+        : `Created ${JSON.stringify(result.config)} (host: ahpd).\nNo service started and authentication remains unverified.\nNext: ahplex serve --config '${result.config.replaceAll("'", "'\\''")}'\n`,
+    );
+    return;
+  }
   if (command === "serve" && !json) {
     const allowed = ["config", "listen-host", "port", "instance", "data-dir"];
     if (Object.keys(values).some((key) => !allowed.includes(key)))
