@@ -19,12 +19,16 @@ Existing `vscode` hosts are unchanged. No migration or parallel startup is
 implicit. See [the complete Ubuntu candidate](ahpd.example.json).
 
 Supply a preinstalled, locked patched AHPD `0.15.0-rc.1` server/SDK/ACP build
-from commit `8c6f4645b90a05d47e43359565cb5697b011a43d` and Copilot `1.0.106`.
+from commit `1d52d06c65ec1006d548bad7c477e032b9dc6782` and Copilot `1.0.106`.
 `runtimeRevision` must equal that commit. It is an operator provenance
 assertion, not verification of the executable's bytes; validate your supplied
 build before starting it. No npm download or update is performed by AHPlex. No
-official release including softov/ahpd#246 is assumed. A future runtime update
-requires an explicit tested configuration/schema update.
+official release is assumed. The Session fix in softov/ahpd#246 has merged; the
+additional recorded Turn identity fix in softov/ahpd#250 requires SDK and ACP to
+be updated together. The earlier Session-only build is rejected because its
+replayed Turn IDs do not satisfy the recovery gate. The new build passes local
+regressions; its final real-target gate is pending external connectivity. A
+future runtime update requires an explicit tested configuration/schema update.
 
 | Host option          | Contract                                                                            |
 | -------------------- | ----------------------------------------------------------------------------------- |
@@ -34,7 +38,7 @@ requires an explicit tested configuration/schema update.
 | `copilotProfileDir`  | Explicit absolute native `COPILOT_HOME`; never discovered, read or copied by AHPlex |
 | `loginAccount`       | Optional expected GitHub login; required for a native OAuth receipt to verify login |
 | `trustedDirectories` | Nonempty explicit local Linux file URIs; also become the daemon's served paths      |
-| `runtimeRevision`    | Exact tested fix commit above                                                       |
+| `runtimeRevision`    | Required source revision above; real-target acceptance is tracked separately        |
 
 `startup.command` launches the supplied runtime. `startup.args` contains only an
 executable prefix (for example the absolute server `dist/main.js` path when

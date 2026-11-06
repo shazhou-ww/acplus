@@ -29,7 +29,7 @@
         "copilotProfileDir": "/var/lib/ahplex/copilot-profile",
         "loginAccount": "operator-login",
         "trustedDirectories": ["file:///srv/ahplex/workspace"],
-        "runtimeRevision": "8c6f4645b90a05d47e43359565cb5697b011a43d"
+        "runtimeRevision": "1d52d06c65ec1006d548bad7c477e032b9dc6782"
       },
       "authentication": [
         {

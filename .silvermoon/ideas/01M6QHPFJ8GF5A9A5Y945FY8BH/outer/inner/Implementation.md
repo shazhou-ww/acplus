@@ -9,6 +9,11 @@ Code 部署效果由协调者另行验收。
 修复了底层会话 ID 与 AHP Session
 ID 不同导致的重启恢复问题，已用修改后构建在 Ubuntu 验证。接入时锁定已验证修复构建或包含该修复的官方版本，不跟随浮动分支；必要时另行确定临时构建的供应方式。
 
+外部验收进一步发现历史 Turn 的原 caller
+ID 丢失，不能用 AHPlex 私有 alias/store 掩盖。追加依赖
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250)，候选必须锁定
+`1d52d06c65ec1006d548bad7c477e032b9dc6782`，同时供应 SDK 与 ACP 的 recorded-ID 修复。协调者独立验证上游 687 个回归及合并后 222 个聚焦测试通过；该来源变更重新进入实现门限，不冒用先前已接受 revision。新构建的真实 Ubuntu 重验因 SSH 失联尚未完成，不作为本阶段已通过证据。
+
 ## Steps
 
 ### I-S01: 接入受管 AHPD 主机

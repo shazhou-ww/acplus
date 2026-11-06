@@ -47,15 +47,21 @@ official Microsoft AHP client SDK as the VS Code adapter. It does not embed
 AHPD, install packages, implement ACP, or change existing VS Code deployments.
 The [explicit Ubuntu example](docs/ahpd.example.json) uses the patched
 `0.15.0-rc.1` SDK/server/ACP build at upstream-fix commit
-`8c6f4645b90a05d47e43359565cb5697b011a43d` and Copilot `1.0.106`. The operator
+`1d52d06c65ec1006d548bad7c477e032b9dc6782` and Copilot `1.0.106`. The operator
 must provision and verify that exact build; `runtimeRevision` records the
 required provenance, not a binary-integrity verification.
-[softov/ahpd#246](https://github.com/softov/ahpd/pull/246) is not presumed
-released. Do not substitute floating `main` or the unpatched `0.14.0` runtime.
+[softov/ahpd#246](https://github.com/softov/ahpd/pull/246) has merged, but the
+additional recorded Turn identity repair in
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250) is also required.
+Update SDK and ACP together. Neither an official release nor the final real
+deployment gate for this new build is presumed complete. Do not substitute
+floating `main`, `0.14.0`, or the earlier Session-only fix build.
 
 This is an opt-in candidate, **not yet the recommended headless deployment**:
 real AHPlex HTTP/CLI, restart/context and VS Code compatibility gates remain
 separate. See [AHPD configuration and native login](docs/HOST-CONFIG.md#ahpd).
+The latest gate results and external blockers are recorded in the
+[deployment verification](.silvermoon/ideas/01M6QHPFJ8GF5A9A5Y945FY8BH/outer/Verification.md).
 The example uses generic deployment placeholders. Supply dedicated absolute
 paths and your expected GitHub `loginAccount`. An explicitly authorized
 experimental profile may be bound for reuse; never discover or copy another

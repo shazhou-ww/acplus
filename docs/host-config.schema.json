@@ -93,7 +93,7 @@
           "items": { "type": "string", "format": "uri", "pattern": "^file:/" }
         },
         "runtimeRevision": {
-          "const": "8c6f4645b90a05d47e43359565cb5697b011a43d",
+          "const": "1d52d06c65ec1006d548bad7c477e032b9dc6782",
           "description": "Required operator-verified patched 0.15.0-rc.1 runtime provenance; not a binary checksum."
         }
       }

@@ -28,7 +28,7 @@ export interface AhpdOptions {
   copilotProfileDir: string;
   loginAccount?: string;
   trustedDirectories: string[];
-  runtimeRevision: "8c6f4645b90a05d47e43359565cb5697b011a43d";
+  runtimeRevision: "1d52d06c65ec1006d548bad7c477e032b9dc6782";
 }
 export const COPILOT_RESOURCE = "https://api.github.com/repos";
 
@@ -51,7 +51,7 @@ export const ahpdFactory: HostAdapterFactory<AhpdOptions> = {
           uniqueItems: true,
           items: { type: "string", format: "uri", pattern: "^file:/" },
         },
-        runtimeRevision: { const: "8c6f4645b90a05d47e43359565cb5697b011a43d" },
+        runtimeRevision: { const: "1d52d06c65ec1006d548bad7c477e032b9dc6782" },
       },
       [
         "port",

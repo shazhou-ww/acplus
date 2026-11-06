@@ -54,7 +54,7 @@ function options(root: string): AhpdOptions {
     copilotProfileDir: resolve(root, "copilot"),
     loginAccount: "fixture-user",
     trustedDirectories: [pathToFileURL(resolve(root, "work")).href],
-    runtimeRevision: "8c6f4645b90a05d47e43359565cb5697b011a43d",
+    runtimeRevision: "1d52d06c65ec1006d548bad7c477e032b9dc6782",
   };
 }
 async function setup(authTimeoutMs = 5000) {
@@ -120,6 +120,13 @@ describe("owned AHPD adapter", () => {
     ) as Record<string, unknown>;
     const validate = validator.compile(schema);
     expect(validate(example), JSON.stringify(validate.errors)).toBe(true);
+    const previous: unknown = JSON.parse(
+      JSON.stringify(example).replace(
+        "1d52d06c65ec1006d548bad7c477e032b9dc6782",
+        "8c6f4645b90a05d47e43359565cb5697b011a43d",
+      ),
+    );
+    expect(validate(previous)).toBe(false);
     expect(
       validate({
         schemaVersion: 1,

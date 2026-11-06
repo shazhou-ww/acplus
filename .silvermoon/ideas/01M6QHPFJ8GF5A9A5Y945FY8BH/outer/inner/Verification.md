@@ -114,3 +114,21 @@ tools、机器专用示例路径及跨所有 idea 的 formatter 豁免。修订�
 95.88%、branches 92.37%、functions 95.77%、lines
 96.79%，format、lint、typecheck、build 与 publint 同时通过。测试证据包含未知和负向路径、当前连接实际请求的执行证明、完整账号匹配 receipt、认证挑战／重连竞争，以及原 VS
 Code 回归。该复核仅支持实现门限，不把合成 receipt 测试当作新的真实浏览器授权，不提前接受部署契约。
+
+## 追加依赖修复后的重新验证
+
+后续外部门限发现原完成 Turn ID 在 AHPD
+ACP 重放后丢失，因此不能继续使用仅修复 Session 的来源。协调者要求在上游修复，没有引入 AHPlex 私有 alias、Turn
+store、文本哈希或顺序猜测。
+[softov/ahpd#246](https://github.com/softov/ahpd/pull/246) 已合并；另提交
+[softov/ahpd#250](https://github.com/softov/ahpd/pull/250)，以原生首个 assistant
+messageId 和现有逐 Chat 记录恢复 caller
+ID，SDK 采用显式 opt-in，不改变其他 backend 的历史身份语义。
+
+协调者独立验证上游 36 个文件、687 个测试通过，6 个既有测试跳过；合并最新 upstream 后，222 个聚焦测试以及 typecheck、boundary、完整 build 再次通过。缺失或不稳定 messageId、以及没有原生 anchor 的旧记录，不能据此追溯恢复，不作虚假承诺。
+
+本候选的源码、公开 schema、示例与测试已统一要求
+`1d52d06c65ec1006d548bad7c477e032b9dc6782`，并增加旧 Session-only 修复来源被拒绝的负向断言。协调者重新执行完整
+`pnpm check`：115 个测试及全部质量／包形状检查通过，aggregate
+coverage 仍分别为 95.88%、92.37%、95.77%、96.79%。这些证据支持新的实现候选，不复用旧 implementationRevision 的 acceptance。新来源的实际 Ubuntu 重验因目标 SSH 不可达而尚未完成，外部结果仍以
+[部署验证](../Verification.md) 为准。
