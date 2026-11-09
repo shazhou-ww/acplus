@@ -17,12 +17,69 @@ acplus turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|
 acplus events list --session UUID [--turn UUID --after N --limit N]
 ```
 
-Client commands require `--url BASE/v2` or `ACPLUS_URL`; no implicit HTTP
-target. Unknown/repeated/incomplete/irrelevant options fail before an HTTP
-request. Output is JSON except offline help/version and the service's startup
-URL. Exit codes: 0 for successful HTTP interactions, 1 for operation/HTTP
-errors, 2 for invalid CLI/config input. Reading an `error` or `unknown` Turn is
-still a successful observation, not a command-level execution success.
+Explicit `--url BASE/v2` or `ACPLUS_URL` always selects HTTP, even on loopback.
+It never enables fallback startup. With neither, Sessions/Turns list/get and
+events list read committed SQLite directly; sessions create and turns start
+discover/start a private background service; turns cancel requires its live
+owner and never starts a replacement. Agents and health still require a URL.
+Unknown/repeated/incomplete/irrelevant options fail before an HTTP request.
+Output is JSON except offline help/version and the service's startup URL. Exit
+codes: 0 for successful observations/interactions, 1 for operation/HTTP errors,
+2 for invalid CLI/config input. Reading an `error` or `unknown` Turn is still a
+successful observation, not a command-level execution success.
+
+## Local service selection
+
+Local sessions/turns/events commands accept `--config FILE` (default
+`~/.acplus/acplus.yaml`) and `--data-dir PATH` (overrides YAML `dataDir`). Local
+mode uses a config file, not `--config -`. No executable, credential read,
+profile lease, writer lock or HTTP request is needed for a history query.
+Storage must already exist with supported schema 2: missing/corrupt/unsupported
+storage is an error, never fabricated empty history. All output, UUID/cursor/
+integer validation, filters and pagination share the HTTP history helpers. Each
+query sees a committed snapshot; successive commands/pages can differ. Stored
+running/cancelling status is last-observed evidence, not liveness.
+
+For local sessions create/turns start, `--idle-grace-ms N` selects the grace of
+a newly launched service, default **30000 ms**, range **100..86400000**. It does
+not change an existing service. The service uses an ephemeral loopback port and
+one canonical-data-directory writer; first callers can race safely. Startup
+readiness is bounded to 15 seconds, with explicit startup/ownership/ discovery
+errors. Native detached startup works on Windows and Linux, independent of
+caller lifetime. Private owner-only discovery and HMAC proof/signatures prevent
+trusting a PID or arbitrary port listener.
+
+Automatic idle shutdown stops admission before draining accepted requests. No
+pending prompt, authentication flow, observed/ambiguous Agent background work or
+request is interrupted by the grace timer. Durable terminal events precede idle
+cleanup, Agent shutdown and data/profile ownership release. Requests rejected
+during shutdown fail explicitly; a lost write response is ambiguous, not an
+invitation to silently replay. Reconcile committed history; retry Turn admission
+only with the original caller-selected ID/text.
+
+Offline reads neither keep a service alive nor reconcile interrupted execution.
+Normal idle expiry permits fresh automatic startup and supported ACP
+load/resume. Unknown results are retained and history is never replayed as a new
+prompt. Abrupt-crash/foreign ownership files are not removed based on process
+IDs: resolve that explicit ownership failure separately. Explicit `serve` stays
+persistent, including when local commands reuse its loopback listener.
+
+```bash
+unset ACPLUS_URL
+acplus sessions create --config /srv/acplus/config.yaml \
+  --idle-grace-ms 1500 --agent copilot --working-directory /srv/work/project
+acplus turns start --config /srv/acplus/config.yaml \
+  --session SESSION-UUID --turn CALLER-TURN-UUID --text-file prompt.txt
+acplus turns get --config /srv/acplus/config.yaml \
+  --session SESSION-UUID --turn CALLER-TURN-UUID
+acplus events list --config /srv/acplus/config.yaml \
+  --session SESSION-UUID --turn CALLER-TURN-UUID --after 0 --limit 100
+```
+
+Keep data, config and profile paths private and outside the workspace. An
+explicit URL takes precedence over all local-selection options. The managed
+`service.json`/identity endpoint/request signature protocol is internal, not a
+supported SDK/API facade; use explicit `serve` for ordinary HTTP/auth clients.
 
 `init` exclusively writes YAML (0600 on Linux), defaulting to
 `~/.acplus/acplus.yaml`. It creates only the default parent `~/.acplus` (0700 on

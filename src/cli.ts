@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
 import { ConfigurationError, record, ServiceError } from "./acp-common.js";
 import { loadConfig, validateConfig } from "./acp-config.js";
+import { history, integer } from "./acp-history.js";
+import {
+  defaultIdleGraceMs,
+  localHeaders,
+  localService,
+  type LocalOwner,
+} from "./local-service.js";
 
 const help = `acplus - on-demand Agents and durable Session history
 
@@ -18,7 +25,12 @@ Usage:
   acplus turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|-]
   acplus events list --session UUID [--turn UUID --after N --limit N]
 
-Client commands require --url BASE/v2 or ACPLUS_URL. Output is JSON.
+Without a URL, sessions/turns list|get and events list read committed SQLite.
+Local sessions create and turns start discover/start a private background service.
+Local turns cancel requires the live owner; it never starts a replacement.
+Local options: --config FILE --data-dir PATH --idle-grace-ms N (100..86400000;
+default 30000, only automatically launched services). Output is JSON.
+--url BASE/v2 or ACPLUS_URL always uses HTTP only. Agents/health require a URL.
 Default YAML config: ~/.acplus/acplus.yaml; data: ~/.acplus/state.
 All reads and Session creation are local. Login is explicit, not a paid probe.
 Login returns a flow; use agents auth to inspect public link/code and input steps.
@@ -80,13 +92,14 @@ export async function run(args: string[]): Promise<void> {
     return;
   }
   const command = args[0];
-  if (command === "serve") {
-    const { start } = await import("./acp-server.js");
+  if (command === "serve" || command === "_auto-serve") {
+    const { start, startManaged } = await import("./acp-server.js");
     const opts = options(args.slice(1), [
       "config",
       "port",
       "listen-host",
       "data-dir",
+      ...(command === "_auto-serve" ? ["idle-grace-ms"] : []),
     ]);
     const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
     const config = await loadConfig(
@@ -98,7 +111,17 @@ export async function run(args: string[]): Promise<void> {
       config.listen.host = opts["listen-host"];
     if (opts["data-dir"] !== undefined)
       config.dataDir = resolve(opts["data-dir"]);
-    const service = await start(validateConfig(config));
+    const service =
+      command === "_auto-serve"
+        ? await startManaged(
+            validateConfig({
+              ...config,
+              listen: { host: "127.0.0.1", port: 0 },
+            }),
+            integer(opts["idle-grace-ms"], defaultIdleGraceMs, 100, 86400000),
+          )
+        : await start(validateConfig(config));
+    if (command === "_auto-serve" && process.connected) process.disconnect?.();
     console.log(`acplus ${config.instance} listening at ${service.url}`);
     let stopping = false;
     const stop = (): void => {
@@ -210,31 +233,21 @@ export async function run(args: string[]): Promise<void> {
   const key = group === "health" ? "health" : `${group}:${action}`;
   if (!Object.hasOwn(commandOptions, key))
     throw new ConfigurationError("Unknown command");
-  const opts = options(
-    args.slice(group === "health" ? 1 : 2),
-    commandOptions[key] ?? [],
-  );
+  const opts = options(args.slice(group === "health" ? 1 : 2), [
+    ...(commandOptions[key] ?? []),
+    ...(["sessions", "turns", "events"].includes(group)
+      ? ["config", "data-dir"]
+      : []),
+    ...(["sessions:create", "turns:start"].includes(key)
+      ? ["idle-grace-ms"]
+      : []),
+  ]);
   const requireOption = (name: string): string => {
     const value = opts[name];
     if (value === undefined)
       throw new ConfigurationError(`--${name} is required`);
     return value;
   };
-  let base: URL;
-  try {
-    base = new URL(opts.url ?? process.env.ACPLUS_URL ?? "");
-    if (
-      !["http:", "https:"].includes(base.protocol) ||
-      base.pathname.replace(/\/$/u, "") !== "/v2" ||
-      base.username ||
-      base.password ||
-      base.search ||
-      base.hash
-    )
-      throw new Error();
-  } catch {
-    throw new ConfigurationError("--url or ACPLUS_URL must name BASE/v2");
-  }
   let path = "";
   let method = "GET";
   let value: unknown;
@@ -294,16 +307,84 @@ export async function run(args: string[]): Promise<void> {
   }
   for (const name of ["limit", "cursor"])
     if (opts[name] !== undefined) query.set(name, opts[name]);
+  let local: LocalOwner | undefined;
+  const explicitUrl = opts.url ?? process.env.ACPLUS_URL;
+  let address = explicitUrl;
+  if (
+    explicitUrl === undefined &&
+    ["sessions", "turns", "events"].includes(group)
+  ) {
+    const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
+    const config = await loadConfig(file);
+    if (opts["data-dir"] !== undefined)
+      config.dataDir = resolve(opts["data-dir"]);
+    if (method === "GET") {
+      const { Store } = await import("./acp-store.js");
+      const store = new Store(
+        join(config.dataDir, "sessions.sqlite"),
+        undefined,
+        true,
+      );
+      try {
+        print(
+          store.snapshot(() =>
+            history(
+              store,
+              new URL(
+                `/v2${path}?${query.toString()}`,
+                "http://acplus.invalid",
+              ),
+              (id) => {
+                if (!config.agents.some((agent) => agent.id === id))
+                  throw new ServiceError("agent_not_found", 404);
+              },
+            ),
+          ),
+        );
+      } finally {
+        store.close();
+      }
+      return;
+    }
+    local = await localService(
+      config,
+      resolve(file),
+      integer(opts["idle-grace-ms"], defaultIdleGraceMs, 100, 86400000),
+      action !== "cancel",
+    );
+    address = local.url;
+  }
+  let base: URL;
+  try {
+    base = new URL(address ?? "");
+    if (
+      !["http:", "https:"].includes(base.protocol) ||
+      base.pathname.replace(/\/$/u, "") !== "/v2" ||
+      base.username ||
+      base.password ||
+      base.search ||
+      base.hash
+    )
+      throw new Error();
+  } catch {
+    throw new ConfigurationError("--url or ACPLUS_URL must name BASE/v2");
+  }
+  const requestPath = path + (query.size ? `?${query.toString()}` : "");
   const response = await fetch(
     base.toString().replace(/\/$/u, "") +
       path +
       (query.size ? `?${query.toString()}` : ""),
     {
       method,
+      headers: {
+        ...(local === undefined
+          ? {}
+          : localHeaders(local, method, `/v2${requestPath}`)),
+        ...(value === undefined ? {} : { "content-type": "application/json" }),
+      },
       ...(value === undefined
         ? {}
         : {
-            headers: { "content-type": "application/json" },
             body: JSON.stringify(value),
           }),
       signal: AbortSignal.timeout(30000),
@@ -328,6 +409,15 @@ if (
   (await realpath(resolve(process.argv[1]))) === fileURLToPath(import.meta.url)
 ) {
   void run(process.argv.slice(2)).catch((error: unknown) => {
+    if (process.connected) {
+      process.send?.({
+        error:
+          error instanceof ServiceError
+            ? error.code
+            : "local_service_configuration_failed",
+      });
+      process.disconnect?.();
+    }
     console.error(error instanceof Error ? error.message : "Operation failed");
     process.exitCode = error instanceof ConfigurationError ? 2 : 1;
   });

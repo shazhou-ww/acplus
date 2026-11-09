@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, openSync, closeSync } from "node:fs";
+import { chmodSync, mkdirSync, openSync, closeSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { record, Redactor, ServiceError, text, uuid } from "./acp-common.js";
@@ -182,24 +182,39 @@ export class Store {
   private readonly redactor: Redactor;
   private closed = false;
 
-  constructor(filePath: string, redactor = new Redactor()) {
+  constructor(
+    filePath: string,
+    redactor = new Redactor(),
+    private readonly readOnly = false,
+  ) {
     this.redactor = redactor;
     let database: DatabaseSync | undefined;
     try {
-      if (filePath !== ":memory:") {
+      if (readOnly) {
+        try {
+          statSync(filePath);
+        } catch (error) {
+          throw new ServiceError(
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+              ? "storage_missing"
+              : "storage_failed",
+            503,
+          );
+        }
+      } else if (filePath !== ":memory:") {
         mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
         const fd = openSync(filePath, "a", 0o600);
         closeSync(fd);
         chmodSync(filePath, 0o600);
       }
-      database = new DatabaseSync(filePath);
+      database = new DatabaseSync(filePath, { readOnly });
       this.db = database;
       this.db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
       const version = this.one("PRAGMA user_version")?.user_version;
-      if (version !== 0 && version !== 2)
+      if ((readOnly && version !== 2) || (version !== 0 && version !== 2))
         throw new ServiceError("storage_schema_unsupported", 503);
       if (this.one("PRAGMA quick_check")?.quick_check !== "ok") corruption();
-      this.transaction(() => {
+      this.snapshot(() => {
         if (version === 0) {
           if (
             this.one(
@@ -273,7 +288,7 @@ export class Store {
             )?.sequence !== value.lastSequence
           )
             corruption();
-          if (!terminal.has(value.state))
+          if (!readOnly && !terminal.has(value.state))
             this.setState(
               value.sessionId,
               value.turnId,
@@ -311,11 +326,12 @@ export class Store {
             value.profileIdentity !== row.profile_identity
           )
             corruption();
-          this.saveAuth({
-            ...value,
-            freshness: "stale",
-            invalidationReason: "service_restarted",
-          });
+          if (!readOnly)
+            this.saveAuth({
+              ...value,
+              freshness: "stale",
+              invalidationReason: "service_restarted",
+            });
         }
       });
     } catch (error) {
@@ -335,8 +351,12 @@ export class Store {
     }
   }
   private transaction<T>(operation: () => T): T {
+    if (this.readOnly) throw new ServiceError("storage_read_only", 503);
+    return this.snapshot(operation);
+  }
+  snapshot<T>(operation: () => T): T {
     return this.safe(() => {
-      this.db.exec("BEGIN IMMEDIATE");
+      this.db.exec(this.readOnly ? "BEGIN" : "BEGIN IMMEDIATE");
       try {
         const result = operation();
         this.db.exec("COMMIT");

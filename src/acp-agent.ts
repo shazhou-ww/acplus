@@ -76,6 +76,16 @@ export class AcpRuntime {
     this.identity = profileIdentity(agent);
   }
 
+  get hasWork(): boolean {
+    return (
+      this.active > 0 ||
+      this.queuedCount > 0 ||
+      this.nativeAuthenticating ||
+      this.detachedSessions.size > 0 ||
+      [...this.activity.values()].some((value) => value !== "idle")
+    );
+  }
+
   methods(): AuthMethodView[] {
     const terminal = (method: unknown): boolean =>
       record(method) && method.type === "terminal";

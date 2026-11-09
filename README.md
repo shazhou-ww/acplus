@@ -174,10 +174,45 @@ acplus events list --session SESSION-UUID --turn CALLER-TURN-UUID \
   --after 0 --limit 100 --url http://127.0.0.1:4280/v2
 ```
 
-Replace placeholders with local UUIDs, choosing the Turn ID before sending.
-Client commands require `--url BASE/v2` or `ACPLUS_URL`. JSON output describes
-observations: HTTP 202 means durable admission, not execution success. Terminal
-status appears only after preceding updates are committed.
+Replace placeholders with local UUIDs, choosing the Turn ID before sending. An
+explicit `--url BASE/v2` or `ACPLUS_URL` always uses that HTTP service,
+including loopback; failed HTTP requests never start a replacement. Without
+either, use the same commands with `--config /srv/acplus/config.yaml` instead of
+`--url`: Session/Turn list/get and event list read committed SQLite directly,
+even with no server or available Agent executable. Missing, corrupt or
+incompatible storage fails explicitly; reads do not create/migrate storage,
+change permissions, reconcile Turns, or acquire writer/profile ownership.
+
+Local Session creation and Turn start discover or launch one private background
+service per canonical data directory. It survives the calling CLI process and
+binds an ephemeral loopback port. Only these automatically launched services
+exit after **30 seconds** with no work or requests; pending execution,
+authentication and Agent background activity keep ownership alive. Set
+`--idle-grace-ms 1500` on the command that starts the service to use a shorter
+grace (allowed range 100..86400000 ms). Reusing an existing service does not
+change its grace or configuration. `--data-dir PATH` overrides configured data
+for both local reads and writes; local commands require a YAML config file,
+defaulting to `~/.acplus/acplus.yaml` (not stdin).
+
+Local cancellation only contacts the actual live owner; a missing owner is an
+error, even for a last-recorded running/cancelling Turn. It never launches a
+replacement or treats persisted state as proof of live work. Offline queries do
+not extend service lifetime. The private `service.json` discovery record is not
+a public API or a PID/port health claim: its per-instance secret proves identity
+with HMAC challenges and signs local requests. Unix uses owner-only file
+permissions; Windows uses and verifies a current-user-only DACL through native
+`whoami.exe`/`icacls.exe`. Do not copy or publish discovery secrets.
+
+Explicit `serve` (and the exported `start(config)`) remains persistent and
+supports ordinary HTTP, including agents/auth/health. Those CLI commands still
+require a URL; they have not become offline history queries. A local CLI can
+reuse a persistent service reachable on loopback without making it automatic.
+After an abrupt crash, stale/foreign ownership remains an explicit error;
+ownership files are never reclaimed using a PID, port, or command name.
+
+JSON output describes observations: HTTP 202 means durable admission, not
+execution success. Terminal status appears only after preceding updates are
+committed.
 
 Known background ambiguity is fenced before another same-Session prompt.
 Cancellation targets exact work and waits for real terminal evidence. Backend

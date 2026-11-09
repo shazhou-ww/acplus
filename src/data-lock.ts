@@ -1,4 +1,5 @@
-import { mkdir, open, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { ServiceError } from "./errors.js";
 
@@ -13,9 +14,21 @@ export async function lockDirectory(
   } catch {
     throw new ServiceError("data_directory_locked", 409);
   }
-  await lock.writeFile(String(process.pid));
+  const identity = await lock.stat();
+  const owner = JSON.stringify({ pid: process.pid, owner: randomUUID() });
+  await lock.writeFile(owner);
   return async () => {
-    await lock.close();
-    await unlink(path);
+    try {
+      const current = await stat(path);
+      if (
+        current.dev !== identity.dev ||
+        current.ino !== identity.ino ||
+        (await readFile(path, "utf8")) !== owner
+      )
+        throw new ServiceError("data_directory_lease_changed", 409);
+      await unlink(path);
+    } finally {
+      await lock.close();
+    }
   };
 }

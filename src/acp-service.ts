@@ -62,6 +62,7 @@ export class Service {
   private failed = false;
   private closed: Promise<void> | null = null;
   private readonly lifetime = new AbortController();
+  beforeRelease: (() => Promise<void>) | undefined;
 
   private constructor(
     readonly config: Config,
@@ -191,6 +192,15 @@ export class Service {
   assertReady(): void {
     if (this.closing) throw new ServiceError("service_stopping", 503);
     if (this.failed) throw new ServiceError("storage_failed", 503);
+  }
+
+  get hasWork(): boolean {
+    return (
+      this.jobs.size > 0 ||
+      [...this.agents.values()].some(
+        (agent) => agent.busy || agent.runtime.hasWork,
+      )
+    );
   }
 
   health(): void {
@@ -614,6 +624,7 @@ export class Service {
     if (results.some((result) => result.status === "rejected"))
       throw new ServiceError("cleanup_failed_lock_retained", 503);
     this.store.close();
+    await this.beforeRelease?.();
     await this.release();
   }
 }

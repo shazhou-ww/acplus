@@ -8,7 +8,14 @@ import {
   uuid,
 } from "./acp-common.js";
 import { Service } from "./acp-service.js";
-import type { Config, Session } from "./acp-types.js";
+import { history, publicSession } from "./acp-history.js";
+import type { Config } from "./acp-types.js";
+import {
+  canonicalDataDir,
+  proof,
+  publishOwner,
+  verifies,
+} from "./local-service.js";
 
 async function body(request: IncomingMessage, keys: string[]) {
   if (
@@ -44,38 +51,15 @@ async function body(request: IncomingMessage, keys: string[]) {
   return value;
 }
 
-function integer(
-  raw: string | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  if (raw === undefined) return fallback;
-  if (!/^\d+$/u.test(raw)) throw new ServiceError("invalid_input", 400);
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < min || value > max)
-    throw new ServiceError("invalid_input", 400);
-  return value;
-}
-
-function publicSession(session: Session) {
-  return {
-    sessionId: session.sessionId,
-    agentId: session.agentId,
-    workingDirectory: session.workingDirectory,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    observedAt: session.observedAt,
-    lastSequence: session.lastSequence,
-    coverage: session.coverage,
-    backendBound: session.backendSessionId !== null,
-  };
-}
-
 async function route(service: Service, request: IncomingMessage) {
   service.assertReady();
   const url = new URL(request.url ?? "", "http://acplus.invalid");
   const method = request.method ?? "";
+  if (method === "GET" && url.pathname.startsWith("/v2/sessions"))
+    return {
+      status: 200,
+      value: history(service.store, url, (id) => service.select(id)),
+    };
   const query = (...names: string[]) => {
     const result: Record<string, string> = {};
     for (const name of url.searchParams.keys()) {
@@ -151,19 +135,6 @@ async function route(service: Service, request: IncomingMessage) {
         ),
       };
     }
-    if (method === "GET") {
-      const value = query("agentId", "cursor", "limit");
-      if (value.agentId !== undefined) service.select(value.agentId);
-      const result = service.store.listSessions({
-        limit: integer(value.limit, 100, 1, 1000),
-        ...(value.agentId === undefined ? {} : { agentId: value.agentId }),
-        ...(value.cursor === undefined ? {} : { cursor: value.cursor }),
-      });
-      return {
-        status: 200,
-        value: { ...result, items: result.items.map(publicSession) },
-      };
-    }
   }
   const match =
     /^\/v2\/sessions\/([^/]+)(?:\/(events|turns)(?:\/([^/]+)(?:\/(cancel))?)?)?$/u.exec(
@@ -173,26 +144,6 @@ async function route(service: Service, request: IncomingMessage) {
   const sessionId = uuid(match[1], "sessionId");
   const operation = match[2];
   const turnId = match[3] === undefined ? undefined : uuid(match[3], "turnId");
-  if (method === "GET" && operation === undefined) {
-    query();
-    return {
-      status: 200,
-      value: publicSession(service.store.getSession(sessionId)),
-    };
-  }
-  if (method === "GET" && operation === "events" && turnId === undefined) {
-    const value = query("turnId", "after", "limit");
-    return {
-      status: 200,
-      value: service.store.listEvents(sessionId, {
-        limit: integer(value.limit, 100, 1, 1000),
-        after: integer(value.after, 0, 0, Number.MAX_SAFE_INTEGER),
-        ...(value.turnId === undefined
-          ? {}
-          : { turnId: uuid(value.turnId, "turnId") }),
-      }),
-    };
-  }
   if (operation === "turns") {
     if (method === "POST" && turnId === undefined) {
       query();
@@ -206,20 +157,6 @@ async function route(service: Service, request: IncomingMessage) {
         ),
       };
     }
-    if (method === "GET" && turnId === undefined) {
-      const value = query("cursor", "limit");
-      return {
-        status: 200,
-        value: service.store.listTurns(sessionId, {
-          limit: integer(value.limit, 100, 1, 1000),
-          ...(value.cursor === undefined ? {} : { cursor: value.cursor }),
-        }),
-      };
-    }
-    if (method === "GET" && turnId !== undefined && match[4] === undefined) {
-      query();
-      return { status: 200, value: service.store.getTurn(sessionId, turnId) };
-    }
     if (method === "POST" && turnId !== undefined && match[4] === "cancel") {
       query();
       await body(request, []);
@@ -231,11 +168,80 @@ async function route(service: Service, request: IncomingMessage) {
 
 export async function serve(
   service: Service,
+  idleGraceMs?: number,
 ): Promise<{ url: string; close(): Promise<void> }> {
+  let stopping = false;
+  let activeRequests = 0;
+  let lastActivity = Date.now();
+  const identity: { token?: string } = {};
+  const nonces = new Map<string, number>();
+  const dataDir = await canonicalDataDir(service.config.dataDir);
   const server = createServer((request, response) => {
     response.setHeader("Cache-Control", "no-store");
+    activeRequests += 1;
+    const state = {
+      finished: false,
+      operationFinished: false,
+      responseFinished: false,
+    };
+    const finish = () => {
+      state.responseFinished = true;
+      if (state.finished || !state.operationFinished) return;
+      state.finished = true;
+      activeRequests -= 1;
+      lastActivity = Date.now();
+    };
+    response.once("finish", finish);
+    response.once("close", finish);
     void (async () => {
       try {
+        if (stopping) throw new ServiceError("service_stopping", 503);
+        if (request.url === "/v2/local-owner") {
+          const challenge = request.headers["x-acplus-challenge"];
+          if (
+            identity.token === undefined ||
+            typeof challenge !== "string" ||
+            !/^[a-f0-9]{64}$/u.test(challenge)
+          )
+            throw new ServiceError("local_owner_unauthorized", 403);
+          response.setHeader("Content-Type", "application/json");
+          response.end(
+            JSON.stringify({
+              dataDir,
+              proof: proof(identity.token, challenge),
+            }),
+          );
+          return;
+        }
+        // Managed services are private to clients holding their discovery token.
+        if (
+          idleGraceMs !== undefined ||
+          request.headers["x-acplus-signature"] !== undefined
+        ) {
+          const nonce = request.headers["x-acplus-nonce"];
+          const signature = request.headers["x-acplus-signature"];
+          for (const [key, expires] of nonces)
+            if (expires < Date.now()) nonces.delete(key);
+          const timestamp =
+            typeof nonce === "string" ? Number(nonce.split(".")[0]) : NaN;
+          if (
+            identity.token === undefined ||
+            typeof nonce !== "string" ||
+            !/^\d+\.[a-f0-9]{32}$/u.test(nonce) ||
+            Math.abs(Date.now() - timestamp) > 30000 ||
+            nonces.has(nonce) ||
+            typeof signature !== "string" ||
+            !verifies(
+              signature,
+              proof(
+                identity.token,
+                `${request.method ?? ""}:${request.url ?? ""}:${nonce}`,
+              ),
+            )
+          )
+            throw new ServiceError("local_owner_unauthorized", 403);
+          nonces.set(nonce, timestamp + 30000);
+        }
         const result = await route(service, request);
         response.statusCode = result.status;
         if ("value" in result) {
@@ -248,6 +254,9 @@ export async function serve(
         response.statusCode = failure.status;
         response.setHeader("Content-Type", "application/json; charset=utf-8");
         response.end(service.redactor.json({ error: diagnostic(error) }));
+      } finally {
+        state.operationFinished = true;
+        if (state.responseFinished) finish();
       }
     })();
   });
@@ -264,12 +273,31 @@ export async function serve(
   const address = server.address();
   if (address === null || typeof address === "string")
     throw new ServiceError("listener_unavailable", 503);
+  let discovery;
+  try {
+    discovery = await publishOwner(
+      dataDir,
+      `http://${service.config.listen.host.includes(":") ? "[::1]" : "127.0.0.1"}:${address.port}/v2`,
+    );
+  } catch (error) {
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+    throw error;
+  }
+  identity.token = discovery.value.token;
+  lastActivity = Date.now();
+  service.beforeRelease = () => discovery.release();
   let closing: Promise<void> | undefined;
-  return {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const result = {
     url: `http://${service.config.listen.host.includes(":") ? `[${service.config.listen.host}]` : service.config.listen.host}:${address.port}/v2`,
     close() {
       closing ??= (async () => {
-        server.closeAllConnections();
+        stopping = true;
+        clearInterval(timer);
         await new Promise<void>((resolve, reject) => {
           server.close((error) => {
             if (error === undefined) resolve();
@@ -281,14 +309,41 @@ export async function serve(
       return closing;
     },
   };
+  if (idleGraceMs !== undefined) {
+    timer = setInterval(
+      () => {
+        if (activeRequests > 0 || service.hasWork) {
+          lastActivity = Date.now();
+          return;
+        }
+        if (Date.now() - lastActivity >= idleGraceMs) {
+          stopping = true;
+          void result.close().catch((error: unknown) => {
+            console.error(JSON.stringify({ event: serviceError(error).code }));
+            process.exitCode = 1;
+          });
+        }
+      },
+      Math.min(100, idleGraceMs),
+    );
+  }
+  return result;
 }
 
-export async function start(config: Config) {
+async function startService(config: Config, idleGraceMs?: number) {
   const service = await Service.create(config);
   try {
-    return await serve(service);
+    return await serve(service, idleGraceMs);
   } catch (error) {
     await service.close();
     throw error;
   }
+}
+
+export function start(config: Config) {
+  return startService(config);
+}
+
+export function startManaged(config: Config, idleGraceMs: number) {
+  return startService(config, idleGraceMs);
 }

@@ -6,6 +6,15 @@ owns local Session/Turn IDs and persists selected Agent events. All GET
 operations read SQLite or local runtime observations; they never start an Agent,
 authenticate, or fetch backend history.
 
+The public HTTP contract and exported `start(config)` remain persistent.
+Separately, the [CLI local mode](CLI.md#local-service-selection) can read the
+same committed Session/Turn/event shapes without HTTP, and privately discover/
+launch an idle-managed service for execution. Its owner discovery/challenge/
+request-signature protocol is internal and is not a new public API. Explicit URL
+clients never perform discovery/startup; use explicit `serve` for ordinary HTTP,
+Agent authentication and health. Offline history does not prove liveness or
+cancel work, mutate/reconcile storage, or keep an automatic service alive.
+
 ## Resources and identity
 
 ```text

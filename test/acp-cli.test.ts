@@ -9,6 +9,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type * as Os from "node:os";
+import type * as LocalService from "../src/local-service.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse, stringify } from "yaml";
 import { ConfigurationError, ServiceError } from "../src/acp-common.js";
@@ -22,12 +23,20 @@ const mocks = vi.hoisted(() => ({
     vi.fn<
       (config: unknown) => Promise<{ url: string; close(): Promise<void> }>
     >(),
+  local: vi.fn(),
 }));
 vi.mock("node:os", async (original) => {
   const actual = await original<typeof Os>();
   return { ...actual, homedir: mocks.home };
 });
-vi.mock("../src/acp-server.js", () => ({ start: mocks.start }));
+vi.mock("../src/acp-server.js", () => ({
+  start: mocks.start,
+  startManaged: mocks.start,
+}));
+vi.mock("../src/local-service.js", async (original) => {
+  const actual = await original<typeof LocalService>();
+  return { ...actual, localService: mocks.local };
+});
 const roots: string[] = [];
 beforeEach(() => {
   mocks.home.mockReturnValue(tmpdir());
@@ -48,12 +57,18 @@ beforeEach(() => {
       close: mocks.close,
     }),
   );
+  mocks.local.mockResolvedValue({
+    dataDir: "local",
+    url,
+    token: "0".repeat(64),
+  });
 });
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   mocks.start.mockClear();
   mocks.close.mockReset();
+  mocks.local.mockReset();
   process.exitCode = undefined;
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -69,6 +84,142 @@ const session = "12345678-1234-1234-1234-123456789abc";
 const turn = "12345678-1234-1234-1234-123456789abd";
 
 describe("acplus CLI", () => {
+  it("rejects idle grace on commands that cannot launch a service", async () => {
+    for (const args of [
+      ["sessions", "list"],
+      ["sessions", "get", "--session", session],
+      ["turns", "get", "--session", session, "--turn", turn],
+      ["turns", "cancel", "--session", session, "--turn", turn],
+      ["events", "list", "--session", session],
+    ])
+      await expect(run([...args, "--idle-grace-ms", "100"])).rejects.toThrow(
+        ConfigurationError,
+      );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("routes local writes through discovered ownership without broadening URL-only commands", async () => {
+    vi.stubEnv("ACPLUS_URL", undefined);
+    const directory = await root();
+    const file = join(directory, "config.yaml");
+    await writeFile(file, stringify(fixtureConfig(directory)));
+    await run([
+      "sessions",
+      "create",
+      "--config",
+      file,
+      "--data-dir",
+      join(directory, "override"),
+      "--idle-grace-ms",
+      "500",
+      "--agent",
+      "copilot",
+      "--working-directory",
+      directory,
+    ]);
+    expect(mocks.local).toHaveBeenLastCalledWith(
+      expect.objectContaining({ dataDir: join(directory, "override") }),
+      file,
+      500,
+      true,
+    );
+    const request = vi.mocked(fetch).mock.calls.at(-1);
+    expect(request?.[0]).toBe(url + "/sessions");
+    const headers = new Headers(request?.[1]?.headers);
+    expect(headers.get("x-acplus-signature")).toMatch(/^[a-f0-9]{64}$/u);
+    await run([
+      "turns",
+      "cancel",
+      "--config",
+      file,
+      "--session",
+      session,
+      "--turn",
+      turn,
+    ]);
+    expect(mocks.local).toHaveBeenLastCalledWith(
+      expect.anything(),
+      file,
+      30000,
+      false,
+    );
+    mocks.local.mockRejectedValueOnce(
+      new ServiceError("local_work_owner_unavailable", 409),
+    );
+    await expect(
+      run([
+        "turns",
+        "cancel",
+        "--config",
+        file,
+        "--session",
+        session,
+        "--turn",
+        turn,
+      ]),
+    ).rejects.toMatchObject({ code: "local_work_owner_unavailable" });
+    await expect(
+      run([
+        "sessions",
+        "create",
+        "--config",
+        file,
+        "--idle-grace-ms",
+        "0",
+        "--agent",
+        "copilot",
+        "--working-directory",
+        directory,
+      ]),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    for (const args of [
+      ["health"],
+      ["agents", "list"],
+      ["agents", "auth", "--agent", "copilot"],
+    ])
+      await expect(run(args)).rejects.toThrow(ConfigurationError);
+    mocks.local.mockClear();
+    vi.stubEnv("ACPLUS_URL", url);
+    await run([
+      "sessions",
+      "create",
+      "--config",
+      "does-not-exist",
+      "--agent",
+      "copilot",
+      "--working-directory",
+      directory,
+    ]);
+    expect(mocks.local).not.toHaveBeenCalled();
+  });
+  it("starts a managed child on ephemeral loopback only and detaches its startup IPC", async () => {
+    const directory = await root();
+    const file = join(directory, "config.yaml");
+    const config = fixtureConfig(directory);
+    await writeFile(file, stringify(config));
+    vi.spyOn(process, "once").mockImplementation(() => process);
+    if (process.disconnect !== undefined)
+      vi.spyOn(process, "disconnect").mockImplementation(() => {});
+    await run([
+      "_auto-serve",
+      "--config",
+      file,
+      "--data-dir",
+      join(directory, "override"),
+      "--idle-grace-ms",
+      "100",
+    ]);
+    expect(mocks.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dataDir: join(directory, "override"),
+        listen: { host: "127.0.0.1", port: 0 },
+      }),
+      100,
+    );
+    await expect(
+      run(["serve", "--config", file, "--idle-grace-ms", "100"]),
+    ).rejects.toThrow(ConfigurationError);
+  });
   it("prints offline help and rejects unknown or malformed options", async () => {
     await run([]);
     await run(["--help"]);
