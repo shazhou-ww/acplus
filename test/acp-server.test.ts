@@ -12,7 +12,7 @@ import type { Config } from "../src/acp-types.js";
 const roots: string[] = [];
 const servers: { url: string; close(): Promise<void> }[] = [];
 async function setup(configure?: (config: Config) => void) {
-  const root = await mkdtemp(join(tmpdir(), "ahplex-acp-http-"));
+  const root = await mkdtemp(join(tmpdir(), "acplus-http-"));
   roots.push(root);
   const config = fixtureConfig(root);
   configure?.(config);

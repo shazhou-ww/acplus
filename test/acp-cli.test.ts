@@ -45,7 +45,7 @@ afterEach(async () => {
   );
 });
 async function root() {
-  const value = await mkdtemp(join(tmpdir(), "ahplex-acp-cli-"));
+  const value = await mkdtemp(join(tmpdir(), "acplus-cli-"));
   roots.push(value);
   return value;
 }
@@ -86,7 +86,7 @@ describe("ACP CLI", () => {
       await expect(run(["health", "--url", address])).rejects.toThrow(
         ConfigurationError,
       );
-    vi.stubEnv("AHPLEX_URL", url);
+    vi.stubEnv("ACPLUS_URL", url);
     await run(["health"]);
     expect(fetch).toHaveBeenCalledWith(url + "/health", expect.anything());
     vi.mocked(fetch).mockImplementationOnce(() =>
@@ -103,6 +103,12 @@ describe("ACP CLI", () => {
     await expect(run(["health", "--url", url])).rejects.toMatchObject({
       code: "invalid_http_response",
     });
+  });
+  it("does not reuse the old command's environment variable", async () => {
+    vi.stubEnv("ACPLUS_URL", undefined);
+    vi.stubEnv("AHPLEX_URL", url);
+    await expect(run(["health"])).rejects.toThrow(ConfigurationError);
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("uses the exact Agent auth and catalogue routes", async () => {
     const directory = await root();

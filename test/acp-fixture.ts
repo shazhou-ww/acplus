@@ -11,7 +11,7 @@ import {agent,methods,ndJsonStream} from ${JSON.stringify(sdk)};
 import {Writable,Readable} from 'node:stream';
 import {appendFileSync} from 'node:fs';
 appendFileSync(process.env.COUNTER_PATH,'start\\n');
-const app=agent({name:'ahplex-fixture'});
+const app=agent({name:'acplus-fixture'});
 let signedIn=false;
 let pending=new Map();
 app.onRequest(methods.agent.initialize,()=>({

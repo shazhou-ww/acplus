@@ -5,18 +5,18 @@ import { fileURLToPath } from "node:url";
 import { ConfigurationError, record, ServiceError } from "./acp-common.js";
 import { loadConfig, validateConfig } from "./acp-config.js";
 
-const help = `AHPlex ACP - on-demand Agents and durable Session history
+const help = `acplus - on-demand Agents and durable Session history
 
 Usage:
-  ahplex serve --config FILE [--port N --listen-host ADDRESS --data-dir PATH]
-  ahplex init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
-  ahplex health --url BASE/v2
-  ahplex agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
-  ahplex sessions list|create|get [--agent ID --session UUID --working-directory PATH]
-  ahplex turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|-]
-  ahplex events list --session UUID [--turn UUID --after N --limit N]
+  acplus serve --config FILE [--port N --listen-host ADDRESS --data-dir PATH]
+  acplus init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
+  acplus health --url BASE/v2
+  acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
+  acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
+  acplus turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|-]
+  acplus events list --session UUID [--turn UUID --after N --limit N]
 
-Client commands require --url BASE/v2 or AHPLEX_URL. Output is JSON.
+Client commands require --url BASE/v2 or ACPLUS_URL. Output is JSON.
 All reads and Session creation are local. Login is explicit, not a paid probe.
 Login returns a flow; use agents auth to inspect public link/code and input steps.
 `;
@@ -69,7 +69,7 @@ export async function run(args: string[]): Promise<void> {
     );
     if (!record(metadata) || typeof metadata.version !== "string")
       throw new ServiceError("package_metadata_unavailable", 503);
-    console.log(`ahplex ${metadata.version} (HTTP /v2, ACP v1)`);
+    console.log(`acplus ${metadata.version} (HTTP /v2, ACP v1)`);
     return;
   }
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -95,7 +95,7 @@ export async function run(args: string[]): Promise<void> {
     if (opts["data-dir"] !== undefined)
       config.dataDir = resolve(opts["data-dir"]);
     const service = await start(validateConfig(config));
-    console.log(`ahplex ${config.instance} listening at ${service.url}`);
+    console.log(`acplus ${config.instance} listening at ${service.url}`);
     let stopping = false;
     const stop = (): void => {
       if (stopping) return;
@@ -130,8 +130,8 @@ export async function run(args: string[]): Promise<void> {
       ],
       ["agent-command", "workspace"],
     );
-    const file = resolve(opts.config ?? "ahplex.json");
-    const directory = resolve(opts["data-dir"] ?? ".ahplex");
+    const file = resolve(opts.config ?? "acplus.json");
+    const directory = resolve(opts["data-dir"] ?? ".acplus");
     const workspace = resolve(opts.workspace ?? "");
     const executable = opts["agent-command"] ?? "";
     try {
@@ -217,7 +217,7 @@ export async function run(args: string[]): Promise<void> {
   };
   let base: URL;
   try {
-    base = new URL(opts.url ?? process.env.AHPLEX_URL ?? "");
+    base = new URL(opts.url ?? process.env.ACPLUS_URL ?? "");
     if (
       !["http:", "https:"].includes(base.protocol) ||
       base.pathname.replace(/\/$/u, "") !== "/v2" ||
@@ -228,7 +228,7 @@ export async function run(args: string[]): Promise<void> {
     )
       throw new Error();
   } catch {
-    throw new ConfigurationError("--url or AHPLEX_URL must name BASE/v2");
+    throw new ConfigurationError("--url or ACPLUS_URL must name BASE/v2");
   }
   let path = "";
   let method = "GET";

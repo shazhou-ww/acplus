@@ -1,14 +1,55 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { assertNpmVersionAvailable } from "../scripts/check-npm-version.js";
 
 const candidate = "0.1.1-canary.20261106.1";
 const metadata = {
-  name: "ahplex",
-  versions: { "0.1.0": { name: "ahplex", version: "0.1.0" } },
+  name: "acplus",
+  versions: { "0.1.0": { name: "acplus", version: "0.1.0" } },
   "dist-tags": { latest: "0.1.0" },
 };
+
+describe("acplus publishing contract", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/publish-npm.yaml", import.meta.url),
+    "utf8",
+  );
+  it("verifies the renamed package and current ACP entry without legacy fixtures", () => {
+    expect(workflow).toContain("manifest.bin.acplus");
+    expect(workflow).toContain("dist/acp-cli.js");
+    expect(workflow).toContain("`acplus@${version}`");
+    expect(workflow).toContain("generated.schemaVersion, 2");
+    for (const legacy of [
+      "@ahpd",
+      "--runtime-root",
+      "--daemon-port",
+      "dist/cli.js",
+      "generated.hosts",
+    ])
+      expect(workflow).not.toContain(legacy);
+  });
+  it("keeps embedded workflow Node programs syntactically valid", () => {
+    const programs = [
+      ...workflow.matchAll(
+        /node --input-type=commonjs <<'NODE'\r?\n([\s\S]*?)^\s*NODE\s*$/gmu,
+      ),
+    ];
+    expect(programs.length).toBeGreaterThanOrEqual(3);
+    for (const program of programs) {
+      const result = spawnSync(
+        process.execPath,
+        ["--input-type=commonjs", "--check"],
+        {
+          input: program[1],
+          encoding: "utf8",
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+    }
+  });
+});
 
 function check(
   body = JSON.stringify(metadata),
@@ -18,14 +59,14 @@ function check(
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockResolvedValue(new Response(body, { status }));
-  return { fetch, result: assertNpmVersionAvailable("ahplex", version, fetch) };
+  return { fetch, result: assertNpmVersionAvailable("acplus", version, fetch) };
 }
 
 describe("Actions npm version availability", () => {
   it("accepts absence only in a successful, valid existing-package response", async () => {
     const { fetch, result } = check();
     await expect(result).resolves.toEqual({
-      name: "ahplex",
+      name: "acplus",
       version: candidate,
       available: true,
       latest: "0.1.0",
@@ -33,7 +74,7 @@ describe("Actions npm version availability", () => {
     });
     expect(fetch).toHaveBeenCalledOnce();
     const [url, options] = fetch.mock.calls[0]!;
-    expect(url).toBe("https://registry.npmjs.org/ahplex");
+    expect(url).toBe("https://registry.npmjs.org/acplus");
     expect(options?.headers).toEqual({ accept: "application/json" });
     expect(options?.signal).toBeInstanceOf(AbortSignal);
   });
@@ -91,14 +132,14 @@ describe("Actions npm version availability", () => {
     const failure = new Error("fixture network unavailable");
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(failure);
     await expect(
-      assertNpmVersionAvailable("ahplex", candidate, fetch),
+      assertNpmVersionAvailable("acplus", candidate, fetch),
     ).rejects.toBe(failure);
   });
 
   it("validates the candidate before requesting registry metadata", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     await expect(
-      assertNpmVersionAvailable("ahplex", "not-a-version", fetch),
+      assertNpmVersionAvailable("acplus", "not-a-version", fetch),
     ).rejects.toThrow("Expected X.Y.Z");
     expect(fetch).not.toHaveBeenCalled();
   });

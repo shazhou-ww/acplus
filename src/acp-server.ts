@@ -74,7 +74,7 @@ function publicSession(session: Session) {
 
 async function route(service: Service, request: IncomingMessage) {
   service.assertReady();
-  const url = new URL(request.url ?? "", "http://ahplex.invalid");
+  const url = new URL(request.url ?? "", "http://acplus.invalid");
   const method = request.method ?? "";
   const query = (...names: string[]) => {
     const result: Record<string, string> = {};

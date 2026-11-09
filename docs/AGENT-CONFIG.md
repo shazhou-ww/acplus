@@ -14,7 +14,7 @@ native paths, not `.cmd`/`.bat` shims.
 {
   "schemaVersion": 2,
   "instance": "local",
-  "dataDir": "/srv/ahplex/state",
+  "dataDir": "/srv/acplus/state",
   "listen": { "host": "127.0.0.1", "port": 4280 },
   "agents": [
     {
@@ -22,7 +22,7 @@ native paths, not `.cmd`/`.bat` shims.
       "label": "Copilot CLI",
       "command": "/usr/local/bin/copilot",
       "args": ["--acp"],
-      "profileDir": "/srv/ahplex/credentials/copilot",
+      "profileDir": "/srv/acplus/credentials/copilot",
       "workspaces": ["/srv/work/project"],
       "permission": "deny",
       "idleTimeoutMs": 0,
@@ -56,6 +56,11 @@ Agent IDs and canonical profile directories must be distinct. Runtime profile
 leases also reject cooperating instances sharing an active profile across data
 roots. No stale lock is silently deleted. After an unclean exit, verify owned
 process cleanup before explicitly repairing ownership.
+
+The profile coordination file retains its established `.ahplex-acp-owner.lock`
+name so already-running v2 runtimes and renamed acplus instances cannot
+simultaneously own the same profile. This is an ownership safety boundary, not
+an old HTTP/CLI compatibility layer.
 
 Credentials remain in Agent profiles/stores or explicit references:
 

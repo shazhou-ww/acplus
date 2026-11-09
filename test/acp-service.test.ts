@@ -121,7 +121,7 @@ function hooks() {
   return value;
 }
 async function setup() {
-  const root = await mkdtemp(join(tmpdir(), "ahplex-acp-service-"));
+  const root = await mkdtemp(join(tmpdir(), "acplus-service-"));
   roots.push(root);
   const config = fixtureConfig(root);
   const service = await Service.create(config);
@@ -431,7 +431,7 @@ describe("ACP service admission and failure boundaries", () => {
 
 describe("ACP service provisioning and auth flows", () => {
   it("registers explicit secrets and rejects missing references without leaking a lock", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ahplex-acp-secrets-"));
+    const root = await mkdtemp(join(tmpdir(), "acplus-secrets-"));
     roots.push(root);
     const config = fixtureConfig(root);
     const file = join(root, "secret");
@@ -478,7 +478,7 @@ describe("ACP service provisioning and auth flows", () => {
     });
   });
   it("cleans up a lock when store construction fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ahplex-acp-store-failure-"));
+    const root = await mkdtemp(join(tmpdir(), "acplus-store-failure-"));
     roots.push(root);
     const config = fixtureConfig(root);
     await mkdir(join(config.dataDir, "sessions.sqlite"), { recursive: true });
@@ -490,7 +490,7 @@ describe("ACP service provisioning and auth flows", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
   it("rejects an unusable credential profile before launching", async () => {
-    const root = await mkdtemp(join(tmpdir(), "ahplex-acp-profile-"));
+    const root = await mkdtemp(join(tmpdir(), "acplus-profile-"));
     roots.push(root);
     const config = fixtureConfig(root);
     await writeFile(config.agents[0]!.profileDir, "not a directory");

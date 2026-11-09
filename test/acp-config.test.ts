@@ -17,7 +17,7 @@ import { fixtureConfig } from "./acp-fixture.js";
 
 const directories: string[] = [];
 async function directory() {
-  const root = await mkdtemp(join(tmpdir(), "ahplex-acp-config-"));
+  const root = await mkdtemp(join(tmpdir(), "acplus-config-"));
   directories.push(root);
   return root;
 }

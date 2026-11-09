@@ -23,6 +23,8 @@ planned behavior from shipped behavior.
 
 ## Decisions
 
+- The current package/command/repository name is `acplus`; older names in
+  immutable acceptance records are historical, not runtime aliases.
 - Connect directly to ACP Agents. No AHP, AHPD, or VS Code Agent Host in the
   target execution path.
 - Introduce `/v2`; do not retain `/v1` compatibility or silently convert its

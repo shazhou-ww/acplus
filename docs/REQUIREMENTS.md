@@ -6,7 +6,7 @@ published legacy packages remain unchanged.
 
 ## Product
 
-ahplex provides a standard HTTP interface for configured ACP Agents. It owns
+acplus provides a standard HTTP interface for configured ACP Agents. It owns
 their processes, starts them only for execution, and persistently records
 Sessions and their content so read-only requests do not need a running Agent. It
 is not an AHP host aggregator or a general task queue.

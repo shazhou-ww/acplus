@@ -133,7 +133,7 @@ export class AcpRuntime {
       lifetime.signal.throwIfAborted();
       const owned = new AgentProcess(this.agent.command, this.agent.args, env);
       this.owned = owned;
-      const app = client({ name: "ahplex" });
+      const app = client({ name: "acplus" });
       app.onRequest(
         methods.client.session.requestPermission,
         async ({ params }) => {
@@ -269,7 +269,7 @@ export class AcpRuntime {
                 },
               },
             },
-            clientInfo: { name: "ahplex", version: "1" },
+            clientInfo: { name: "acplus", version: "1" },
           },
           this.options(lifetime.signal),
         ),

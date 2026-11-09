@@ -3,6 +3,9 @@ import { mkdir, open, stat, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { ServiceError } from "./acp-common.js";
 
+// Keep the coordination path stable across package renames.
+const profileLeaseFile = ".ahplex-acp-owner.lock";
+
 export class ProfileLease {
   private releasing: Promise<void> | undefined;
 
@@ -44,13 +47,13 @@ export async function acquireProfileLease(
   }
   let handle: FileHandle;
   try {
-    handle = await open(join(directory, ".ahplex-acp-owner.lock"), "wx", 0o600);
+    handle = await open(join(directory, profileLeaseFile), "wx", 0o600);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST")
       throw new ServiceError("agent_profile_busy", 409);
     throw new ServiceError("agent_profile_unavailable");
   }
-  const path = join(directory, ".ahplex-acp-owner.lock");
+  const path = join(directory, profileLeaseFile);
   let lease: ProfileLease | undefined;
   try {
     lease = new ProfileLease(path, handle, await handle.stat());

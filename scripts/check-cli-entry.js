@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const metadata = JSON.parse(readFileSync("package.json", "utf8"));
-const directory = mkdtempSync(join(tmpdir(), "ahplex-cli-entry-"));
+const directory = mkdtempSync(join(tmpdir(), "acplus-cli-entry-"));
 try {
-  const target = resolve(metadata.bin.ahplex);
-  const alias = join(directory, "ahplex");
+  const target = resolve(metadata.bin.acplus);
+  const alias = join(directory, "acplus");
   if (process.platform !== "win32") symlinkSync(target, alias);
   const result = spawnSync(
     process.execPath,
@@ -18,7 +18,7 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(
     result.stdout.trim(),
-    `ahplex ${metadata.version} (HTTP /v2, ACP v1)`,
+    `acplus ${metadata.version} (HTTP /v2, ACP v1)`,
   );
   assert.equal(result.stderr, "");
   console.log("Public CLI entry verified");

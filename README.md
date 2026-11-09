@@ -1,4 +1,9 @@
-# ahplex
+# acplus
+
+The npm package, CLI command and GitHub repository are named `acplus`. Client
+configuration uses `ACPLUS_URL`; default files are `acplus.json` and `.acplus`.
+There is no old command/environment alias. Historical Silvermoon records and Git
+commits remain unchanged.
 
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
@@ -79,14 +84,14 @@ Choose an existing trusted workspace, a private configuration parent and
 separate data/profile directories outside that workspace:
 
 ```bash
-ahplex init --agent-command "$(command -v copilot)" \
-  --workspace /srv/work/project --data-dir /srv/ahplex/state \
-  --profile /srv/ahplex/credentials/copilot --login-account YOUR-LOGIN \
-  --config /srv/ahplex/config.json --port 4280
-ahplex serve --config /srv/ahplex/config.json
+acplus init --agent-command "$(command -v copilot)" \
+  --workspace /srv/work/project --data-dir /srv/acplus/state \
+  --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
+  --config /srv/acplus/config.json --port 4280
+acplus serve --config /srv/acplus/config.json
 ```
 
-For an uninstalled checkout, replace `ahplex` with
+For an uninstalled checkout, replace `acplus` with
 `node /absolute/checkout/dist/acp-cli.js`. Replace paths and `YOUR-LOGIN`
 explicitly. `init` checks paths and exclusively creates a new schema-2 config
 (0600 on Linux); it does not install, start, authenticate or probe an Agent. It
@@ -104,9 +109,9 @@ Ordinary execution requests do not submit provider credentials. Reuse a
 deliberately selected authorized profile, or explicitly provision one:
 
 ```bash
-ahplex agents login --agent copilot --method native-login \
+acplus agents login --agent copilot --method native-login \
   --url http://127.0.0.1:4280/v2
-ahplex agents auth --agent copilot --url http://127.0.0.1:4280/v2
+acplus agents auth --agent copilot --url http://127.0.0.1:4280/v2
 ```
 
 Login returns an expiring flow. Inspect it for the public device URL/code,
@@ -115,7 +120,7 @@ storage consent is requested, submit the exact step ID:
 
 ```bash
 printf '%s' '{"stepId":"COPY-EXACT-ID","values":{"confirmPlaintextStorage":"yes"}}' |
-  ahplex agents auth-input --agent copilot --input-file - \
+  acplus agents auth-input --agent copilot --input-file - \
     --url http://127.0.0.1:4280/v2
 ```
 
@@ -133,19 +138,19 @@ login is not a Copilot entitlement/billing guarantee.
 ## Run and query a Session
 
 ```bash
-ahplex sessions create --agent copilot --working-directory /srv/work/project \
+acplus sessions create --agent copilot --working-directory /srv/work/project \
   --url http://127.0.0.1:4280/v2
 printf '%s' 'Reply with exactly OK. Do not use tools.' |
-  ahplex turns start --session SESSION-UUID --turn CALLER-TURN-UUID \
+  acplus turns start --session SESSION-UUID --turn CALLER-TURN-UUID \
     --text-file - --url http://127.0.0.1:4280/v2
-ahplex turns get --session SESSION-UUID --turn CALLER-TURN-UUID \
+acplus turns get --session SESSION-UUID --turn CALLER-TURN-UUID \
   --url http://127.0.0.1:4280/v2
-ahplex events list --session SESSION-UUID --turn CALLER-TURN-UUID \
+acplus events list --session SESSION-UUID --turn CALLER-TURN-UUID \
   --after 0 --limit 100 --url http://127.0.0.1:4280/v2
 ```
 
 Replace placeholders with local UUIDs, choosing the Turn ID before sending.
-Client commands require `--url BASE/v2` or `AHPLEX_URL`. JSON output describes
+Client commands require `--url BASE/v2` or `ACPLUS_URL`. JSON output describes
 observations: HTTP 202 means durable admission, not execution success. Terminal
 status appears only after preceding updates are committed.
 
@@ -182,7 +187,7 @@ sourced with no invented local Turn association.
 Runtime exports remain `start`, `loadConfig`, `validateConfig`,
 `ConfigurationError` and `ServiceError`. Public configuration/resource types are
 exported from `src/index.ts`. The package remains one ESM package, with the
-existing exports map and files allowlist. The normal `ahplex` bin now points at
+existing exports map and files allowlist. The normal `acplus` bin now points at
 the verified direct ACP entry; there is no permanent dual-stack launcher.
 
 ## Publishing
@@ -190,8 +195,12 @@ the verified direct ACP entry; there is no permanent dual-stack launcher.
 Publishing is separate from this implementation. Use GitHub Trusted Publishing
 OIDC, never long-lived npm tokens:
 
+The renamed package is private until its new Trusted Publisher is configured and
+a release is explicitly approved. Confirm the acplus package settings use the
+repository below before removing the private flag.
+
 - Organization/user: `shazhou-ww`
-- Repository: `ahplex`
+- Repository: `acplus`
 - Workflow: `publish-npm.yaml`
 - Environment: `npm`
 

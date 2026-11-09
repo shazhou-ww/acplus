@@ -75,9 +75,9 @@ jobs:
             process.exit(1);
           }
 
-          if (packageJson.name === "preset-npm-package") {
+          if (packageJson.name !== "acplus") {
             console.error(
-              "::error::Replace the preset package name before publishing.",
+              "::error::The release package name must be acplus.",
             );
             process.exit(1);
           }
@@ -140,8 +140,9 @@ jobs:
           const assert = require('node:assert/strict');
           const { statSync } = require('node:fs');
           const manifest = require('./package.json');
-          assert.equal(manifest.bin.ahplex.replace(/^\.\//u, ''), 'dist/cli.js');
-          assert.ok(statSync(manifest.bin.ahplex).isFile());
+          assert.equal(manifest.name, 'acplus');
+          assert.equal(manifest.bin.acplus.replace(/^\.\//u, ''), 'dist/acp-cli.js');
+          assert.ok(statSync(manifest.bin.acplus).isFile());
           console.log(JSON.stringify({ version: manifest.version, bin: manifest.bin, builtCliPresent: true }));
           NODE
           set -o pipefail
@@ -200,110 +201,94 @@ jobs:
           node --input-type=commonjs <<'NODE'
           const assert = require('node:assert/strict');
           const { execFileSync } = require('node:child_process');
-          const { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } = require('node:fs');
+          const { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync } = require('node:fs');
           const { join } = require('node:path');
           const version = process.env.PACKAGE_VERSION;
           assert.match(version, /^\d+\.\d+\.\d+(?:-canary\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))?$/);
           const distTag = version.includes('-canary.') ? 'canary' : 'latest';
           const registry = '--registry=https://registry.npmjs.org/';
-          const metadata = JSON.parse(execFileSync('npm', ['view', `ahplex@${version}`, '--json', registry], { encoding: 'utf8' }));
-          assert.equal(metadata.name, 'ahplex');
+          const metadata = JSON.parse(execFileSync('npm', ['view', `acplus@${version}`, '--json', registry], { encoding: 'utf8' }));
+          assert.equal(metadata.name, 'acplus');
           assert.equal(metadata.version, version);
           assert.equal(metadata['dist-tags'][distTag], version);
           if (distTag === 'canary') assert.match(metadata['dist-tags'].latest, /^\d+\.\d+\.\d+$/, 'Canary must not replace stable latest');
-          assert.ok(metadata.bin?.ahplex, 'Published metadata must retain the CLI bin');
+          assert.ok(metadata.bin?.acplus, 'Published metadata must retain the CLI bin');
           assert.ok(metadata.dist?.attestations?.url, 'Published version must include provenance');
-          const directory = mkdtempSync(join(process.env.RUNNER_TEMP, 'ahplex-verify-'));
-          execFileSync('npm', ['install', '--prefix', directory, `ahplex@${version}`, '--ignore-scripts', '--no-audit', '--no-fund', registry], { stdio: 'inherit' });
-          const installed = join(directory, 'node_modules', 'ahplex');
+          const directory = mkdtempSync(join(process.env.RUNNER_TEMP, 'acplus-verify-'));
+          execFileSync('npm', ['install', '--prefix', directory, `acplus@${version}`, '--ignore-scripts', '--no-audit', '--no-fund', registry], { stdio: 'inherit' });
+          const installed = join(directory, 'node_modules', 'acplus');
           const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
           assert.equal(manifest.version, version);
-          assert.equal(manifest.bin.ahplex.replace(/^\.\//, ''), 'dist/cli.js');
+          assert.equal(manifest.name, 'acplus');
+          assert.equal(manifest.bin.acplus.replace(/^\.\//, ''), 'dist/acp-cli.js');
           assert.deepEqual(manifest.files, ['dist', 'README.md', 'LICENSE']);
           assert.deepEqual(manifest.exports, {
             '.': { types: './dist/index.d.ts', import: './dist/index.js' },
             './package.json': './package.json',
           });
           assert.ok(readFileSync(join(installed, 'dist', 'index.d.ts'), 'utf8').length > 0);
-          const executable = join(directory, 'node_modules', '.bin', 'ahplex');
-          assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), version);
+          const executable = join(directory, 'node_modules', '.bin', 'acplus');
+          assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), `acplus ${version} (HTTP /v2, ACP v1)`);
           const rootHelp = execFileSync(executable, ['--help'], { encoding: 'utf8' });
-          assert.match(rootHelp, /turns start\|get\|cancel/);
-          if (distTag === 'canary') {
-            assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /Usage: ahplex turns get/);
-            let rejected = false;
+          assert.match(rootHelp, /acplus turns list\|start\|get\|cancel/);
+          assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /acplus turns list\|start\|get\|cancel/);
+          let rejected = false;
+          try {
+            execFileSync(executable, ['turns', 'get'], { encoding: 'utf8', stdio: 'pipe' });
+          } catch (error) {
+            assert.equal(error.status, 2);
+            assert.match(error.stderr, /required|BASE\/v2/);
+            rejected = true;
+          }
+          assert.ok(rejected, 'Missing arguments must fail explicitly');
+          assert.match(rootHelp, /acplus init/);
+          assert.equal(existsSync(join(installed, 'docs')), false, 'init must not depend on unshipped templates');
+          const fixture = join(directory, 'init-fixture');
+          const workspace = join(fixture, 'workspace');
+          const data = join(fixture, 'state');
+          mkdirSync(workspace, { recursive: true });
+          const initConfig = join(fixture, 'acplus.json');
+          const args = ['init', '--agent-command', process.execPath, '--workspace', workspace, '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
+          const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
+          assert.deepEqual(result, { config: initConfig });
+          const original = readFileSync(initConfig);
+          const generated = JSON.parse(original);
+          assert.equal(statSync(initConfig).mode & 0o777, 0o600);
+          assert.equal(existsSync(data), false, 'init must not create data or profile directories');
+          assert.equal(generated.schemaVersion, 2);
+          assert.equal(generated.agents.length, 1);
+          assert.equal(generated.agents[0].command, process.execPath);
+          assert.deepEqual(generated.agents[0].args, ['--acp']);
+          assert.equal(generated.agents[0].permission, 'deny');
+          const refuse = target => {
+            let refused = false;
             try {
-              execFileSync(executable, ['turns', 'get'], { encoding: 'utf8', stdio: 'pipe' });
+              execFileSync(executable, [...args, '--config', target], { encoding: 'utf8', stdio: 'pipe' });
             } catch (error) {
               assert.equal(error.status, 2);
-              assert.match(error.stderr, /Usage: ahplex turns get/);
-              rejected = true;
+              assert.match(error.stderr, /Configuration must be a new file/);
+              refused = true;
             }
-            assert.ok(rejected, 'Missing arguments must fail with relevant help');
-          }
-          const minimumInit = [0, 1, 1, 20261106, 1];
-          const parts = version.split(/-canary\.|\./u).map(Number);
-          const difference = parts.findIndex((part, index) => part !== minimumInit[index]);
-          const hasInit = difference === -1 || parts[difference] > minimumInit[difference];
-          let initConfig;
-          if (hasInit) {
-            assert.match(rootHelp, /ahplex init/);
-            assert.match(execFileSync(executable, ['init', '--help'], { encoding: 'utf8' }), /Usage: ahplex init/);
-            assert.equal(existsSync(join(installed, 'docs')), false, 'init must not depend on unshipped templates');
-            const fixture = join(directory, 'init-fixture');
-            const runtime = join(fixture, 'runtime');
-            const workspace = join(fixture, 'workspace');
-            const data = join(fixture, 'state');
-            for (const name of ['sdk', 'server', 'agent-acp']) {
-              const output = join(runtime, 'node_modules', '@ahpd', name, 'dist');
-              mkdirSync(output, { recursive: true });
-              writeFileSync(join(output, name === 'server' ? 'main.js' : 'index.js'), '');
-            }
-            writeFileSync(join(runtime, 'node_modules', '@ahpd', 'agent-acp', 'package.json'), '{}');
-            mkdirSync(workspace);
-            initConfig = join(fixture, 'ahplex.json');
-            const args = ['init', '--runtime-root', runtime, '--copilot-command', process.execPath, '--workspace', workspace, '--data-dir', data, '--login-account', 'fixture-user', '--port', '4293', '--daemon-port', '19493', '--json'];
-            const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
-            assert.deepEqual(result, { config: initConfig, host: 'ahpd' });
-            const original = readFileSync(initConfig);
-            const generated = JSON.parse(original);
-            assert.equal(statSync(initConfig).mode & 0o777, 0o600);
-            assert.equal(existsSync(data), false, 'init must not create data or profile directories');
-            assert.equal(generated.hosts.length, 1);
-            assert.equal(generated.hosts[0].adapter, 'ahpd');
-            assert.equal(generated.hosts[0].startup.command, process.execPath);
-            assert.equal(generated.hosts[0].lifecycle.onDemand, true);
-            assert.equal(generated.hosts[0].lifecycle.prepareOnStartup, false);
-            const refuse = target => {
-              let refused = false;
-              try {
-                execFileSync(executable, [...args, '--config', target], { encoding: 'utf8', stdio: 'pipe' });
-              } catch (error) {
-                assert.equal(error.status, 2);
-                assert.match(error.stderr, /exclusively/);
-                refused = true;
-              }
-              assert.ok(refused, 'Existing config and symlinks must never be replaced');
-            };
-            refuse(initConfig);
-            const link = join(fixture, 'link.json');
-            symlinkSync(initConfig, link);
-            refuse(link);
-            const missing = join(fixture, 'missing.json');
-            const dangling = join(fixture, 'dangling.json');
-            symlinkSync(missing, dangling);
-            refuse(dangling);
-            assert.equal(existsSync(missing), false);
-            assert.deepEqual(readFileSync(initConfig), original);
-          }
+            assert.ok(refused, 'Existing config and symlinks must never be replaced');
+          };
+          refuse(initConfig);
+          const link = join(fixture, 'link.json');
+          symlinkSync(initConfig, link);
+          refuse(link);
+          const missing = join(fixture, 'missing.json');
+          const dangling = join(fixture, 'dangling.json');
+          symlinkSync(missing, dangling);
+          refuse(dangling);
+          assert.equal(existsSync(missing), false);
+          assert.deepEqual(readFileSync(initConfig), original);
           execFileSync(process.execPath, [
             '--input-type=module', '--eval',
             `import assert from 'node:assert/strict';
              import { readFileSync } from 'node:fs';
-             import * as api from 'ahplex';
+             import * as api from 'acplus';
              for (const name of ['start', 'loadConfig', 'validateConfig', 'ConfigurationError', 'ServiceError']) assert.equal(typeof api[name], 'function');
              if (process.argv[1]) api.validateConfig(JSON.parse(readFileSync(process.argv[1], 'utf8')));`,
-            ...(initConfig ? [initConfig] : []),
+            initConfig,
           ], { cwd: directory, stdio: 'inherit' });
-          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: hasInit ? 'passed' : 'not-applicable' }));
+          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: 'passed' }));
           NODE
