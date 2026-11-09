@@ -7,6 +7,10 @@
 
 ## Silvermoon 设计工作
 
+构想的
+[设计决策支持文档](../.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Design-decisions.md)
+说明产品选择与边界，并链接到对应的项目详细设计文档。
+
 本次方向由仓库中的
 [ACP HTTP idea](../.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Idea.md)
 推进。理想世界契约定义结果与边界；本文继续作为详细设计草案，不能当作生命周期验收或实现完成的证据。构想验收后，在主体世界细化实施契约，将确认的设计细节导出到本文、英文版、根级需求与约束，以及 HTTP/OpenAPI、CLI 和配置文档。各份导出契约必须一致，并明确区分计划行为与已发布行为。

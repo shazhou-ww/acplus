@@ -21,3 +21,9 @@ Agent 的标准 HTTP 接口：按执行请求启动 Agent，持久保存会话�
 - 配置中的 ACP Agent 能通过 HTTP 完成真实执行。
 - Agent 不运行或不可用时，仍可查询持久 Session、Turn 和事件，并按 Turn 过滤事件。
 - 执行身份与记录覆盖情况明确；认证密钥不进入会话记录，中断、取消、恢复失败不被伪装成成功。
+
+## Supporting documents
+
+- [设计决策与审阅上下文](Design-decisions.md)：本理想世界的支持文档，解释已讨论的选择与边界。
+- 详细设计草案：[中文版](../../../../../../docs/ACP-DESIGN.zh-CN.md) ·
+  [英文版](../../../../../../docs/ACP-DESIGN.md)。这些项目文档是实施背景，不将其全部实现细节纳入构想验收。
