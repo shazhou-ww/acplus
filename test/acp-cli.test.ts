@@ -12,7 +12,7 @@ import type * as Os from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse, stringify } from "yaml";
 import { ConfigurationError, ServiceError } from "../src/acp-common.js";
-import { run } from "../src/acp-cli.js";
+import { run } from "../src/cli.js";
 import { fixtureConfig } from "./acp-fixture.js";
 
 const mocks = vi.hoisted(() => ({
@@ -68,7 +68,7 @@ const url = "http://127.0.0.1:1234/v2";
 const session = "12345678-1234-1234-1234-123456789abc";
 const turn = "12345678-1234-1234-1234-123456789abd";
 
-describe("ACP CLI", () => {
+describe("acplus CLI", () => {
   it("prints offline help and rejects unknown or malformed options", async () => {
     await run([]);
     await run(["--help"]);

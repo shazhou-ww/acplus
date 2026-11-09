@@ -18,14 +18,18 @@ describe("acplus publishing contract", () => {
   );
   it("verifies the renamed package and current ACP entry without legacy fixtures", () => {
     expect(workflow).toContain("manifest.bin.acplus");
-    expect(workflow).toContain("dist/acp-cli.js");
+    expect(workflow).toContain(
+      "manifest.bin.acplus.replace(/^\\.\\//u, ''), 'dist/cli.js'",
+    );
+    expect(workflow).toContain(
+      "['dist/cli.js', 'dist/acp-cli.js'].includes(manifest.bin.acplus.replace(/^\\.\\//u, ''))",
+    );
     expect(workflow).toContain("`acplus@${version}`");
     expect(workflow).toContain("generated.schemaVersion, 2");
     for (const legacy of [
       "@ahpd",
       "--runtime-root",
       "--daemon-port",
-      "dist/cli.js",
       "generated.hosts",
     ])
       expect(workflow).not.toContain(legacy);

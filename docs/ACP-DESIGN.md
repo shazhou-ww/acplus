@@ -420,7 +420,8 @@ not required for the first implementation.
 ### Independent entry first, replacement after verification
 
 Build the ACP implementation behind a separate entry in the same package,
-initially invoked as `node dist/acp-cli.js`. Do not route the old `ahplex`
+promoted to the `acplus` CLI with the checkout entry `node dist/cli.js`. ACP
+names the Agent protocol, not the package or CLI. Do not route the old `ahplex`
 command, exported `start`, or `/v1` requests into it during development. Use its
 own schema-2 configuration, database/data root, profile, and port. This
 temporary coexistence is rollout isolation, not backward compatibility: the new

@@ -141,7 +141,7 @@ jobs:
           const { statSync } = require('node:fs');
           const manifest = require('./package.json');
           assert.equal(manifest.name, 'acplus');
-          assert.equal(manifest.bin.acplus.replace(/^\.\//u, ''), 'dist/acp-cli.js');
+          assert.equal(manifest.bin.acplus.replace(/^\.\//u, ''), 'dist/cli.js');
           assert.ok(statSync(manifest.bin.acplus).isFile());
           console.log(JSON.stringify({ version: manifest.version, bin: manifest.bin, builtCliPresent: true }));
           NODE
@@ -220,7 +220,7 @@ jobs:
           const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
           assert.equal(manifest.version, version);
           assert.equal(manifest.name, 'acplus');
-          assert.equal(manifest.bin.acplus.replace(/^\.\//, ''), 'dist/acp-cli.js');
+          assert.ok(['dist/cli.js', 'dist/acp-cli.js'].includes(manifest.bin.acplus.replace(/^\.\//u, '')), 'Published CLI entry must be current or historical acplus');
           assert.deepEqual(manifest.files, ['dist', 'README.md', 'LICENSE']);
           assert.deepEqual(manifest.exports, {
             '.': { types: './dist/index.d.ts', import: './dist/index.js' },

@@ -66,7 +66,7 @@ Use Node.js **22.13+** and pnpm **11.22+**:
 pnpm install
 pnpm --config.verifyDepsBeforeRun=false check
 pnpm build
-node .\dist\acp-cli.js --help
+node .\dist\cli.js --help
 ```
 
 The check flag avoids unrelated dependency reconciliation on this development
@@ -103,7 +103,7 @@ acplus serve --config /srv/acplus/config.yaml
 ```
 
 For an uninstalled checkout, replace `acplus` with
-`node /absolute/checkout/dist/acp-cli.js`. Replace paths and `YOUR-LOGIN`
+`node /absolute/checkout/dist/cli.js`. Replace paths and `YOUR-LOGIN`
 explicitly. `init` checks paths and exclusively creates a new schema-2 config
 (0600 on Linux); it does not install, start, authenticate or probe an Agent. It
 never overwrites an existing file/symlink or copies another profile.

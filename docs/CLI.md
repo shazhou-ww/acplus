@@ -1,8 +1,9 @@
-# ACP CLI
+# acplus CLI
 
-The independent entry is initially `node dist/acp-cli.js`; after promotion the
-same implementation is the normal `acplus` command. It uses HTTP `/v2` and
-stable ACP wire v1. No legacy `hosts`, `chats`, or `/v1` compatibility.
+The package and CLI command are named `acplus`; the checkout entry is
+`node dist/cli.js`. ACP is the Agent protocol, not the CLI name. The CLI uses
+HTTP `/v2` and stable ACP wire v1. No legacy `hosts`, `chats`, or `/v1`
+compatibility.
 
 ```text
 acplus --help
