@@ -18,12 +18,12 @@
 
 ### Deployment steps
 
-- [ ] **D-S01:** 发布并验证新的 Canary
-- [ ] **D-S02:** 验证 Ubuntu 本地生命周期
-- [ ] **D-S03:** 验证兼容模式与恢复边界
+- [x] **D-S01:** 发布并验证新的 Canary
+- [x] **D-S02:** 验证 Ubuntu 本地生命周期
+- [x] **D-S03:** 验证兼容模式与恢复边界
 
 ### Deployment acceptance criteria
 
-- [ ] **D-AC01:** Canary 的发布与安装结果真实可验证
-- [ ] **D-AC02:** Ubuntu 安装后无需维护后台服务
-- [ ] **D-AC03:** 兼容、恢复和隔离清理成立
+- [x] **D-AC01:** Canary 的发布与安装结果真实可验证
+- [x] **D-AC02:** Ubuntu 安装后无需维护后台服务
+- [x] **D-AC03:** 兼容、恢复和隔离清理成立

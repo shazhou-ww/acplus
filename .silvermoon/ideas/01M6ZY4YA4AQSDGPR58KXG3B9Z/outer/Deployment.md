@@ -1,5 +1,7 @@
 # Deployment
 
+最终发布与 Ubuntu 验收证据见 [Verification.md](Verification.md)。
+
 ## Steps
 
 ### D-S01: 发布并验证新的 Canary
