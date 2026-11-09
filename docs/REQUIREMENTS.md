@@ -20,6 +20,8 @@ is not an AHP host aggregator or a general task queue.
 - Exclude authentication secrets and raw login transcripts.
 - All HTTP GET operations read local state without contacting an Agent.
 - Operator-provisioned Agent credentials, not per-request client credentials.
+- Explicit HTTP/CLI authentication bridging and separately cached sanitized
+  observations; Agent profile credentials are not copied into Session records.
 
 ## Concepts
 
@@ -47,6 +49,15 @@ Requests can select configured Agents/workspaces but cannot register commands,
 profiles, environment overrides, MCP endpoints, or provider configurations.
 Device login displays only the public link/code and explicit storage choice;
 successful login is distinct from successful model execution.
+
+Provide operator-protected explicit authentication routes. Follow advertised
+agent-driven versus terminal flows, with tested native adapters where needed.
+Keep sanitized method/result/time/expiry observations separate from credentials
+and Session content. Authentication GETs are local; stale historical success
+does not imply current validity or caller authorization. Restart/reconnection,
+profile/account changes, logout, auth challenges, and known expiry invalidate
+current evidence. Reuse saved credentials when possible without automatically
+requesting human login or issuing hidden paid verification probes.
 
 ### R2. Create and discover local Sessions
 

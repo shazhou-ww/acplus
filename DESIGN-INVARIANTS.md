@@ -92,6 +92,15 @@ unchanged until the tested `/v2` cutover.
 - Agent credentials are operator-provisioned. Ordinary HTTP execution does not
   require the caller to submit provider credentials.
 - Authentication adapters are Agent-specific where ACP alone is insufficient.
+- Explicit auth HTTP routes are operator-protected; agent-driven and terminal
+  methods follow their respective negotiated flows, not one generic RPC.
+- Cache sanitized authentication observations separately by Agent/profile and
+  runtime generation. Credentials stay in the configured Agent profile/store,
+  not the Session/Turn/Event database.
+- Authentication GETs are local. Restart/reconnection, profile/account change,
+  logout, auth challenge, and known expiry invalidate current evidence.
+  Historical success remains stale, never a guarantee of valid credentials or
+  inbound authorization; missing expiry is not an invented TTL.
 - Device link/code, authenticated profile, and successful model execution are
   distinct evidence. No hidden paid authentication probe.
 - Plaintext storage requires explicit operator consent.

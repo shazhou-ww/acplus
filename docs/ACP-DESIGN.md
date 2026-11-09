@@ -26,6 +26,8 @@ consistent and explicitly distinguish planned behavior from shipped behavior.
   configured Agent and creates its ACP session.
 - Persist user/Agent messages, tool calls/results, and execution observations.
   Authentication secrets and raw login transcripts are excluded.
+- Bridge explicit Agent authentication and cache sanitized authentication
+  observations separately; credentials stay in the Agent's dedicated profile.
 - All HTTP GET operations use local records. They never start, authenticate,
   load, resume, or query an Agent.
 - Keep one ESM package, the package name, and the public exports/files layout. A
@@ -120,7 +122,8 @@ the client, and session updates are generally scoped only to an ACP Session.
 
 ## Durable records
 
-Start with three tables:
+Use three tables for Session content, plus a separate authentication observation
+table:
 
 | Table      | Important fields                                                                                              |
 | ---------- | ------------------------------------------------------------------------------------------------------------- |
@@ -138,13 +141,21 @@ incremental `tool_call_update` patches update the derived tool view. Keep
 message boundaries and content-block types rather than flattening every
 notification into one string.
 
-Store selected ACP updates and normalized message/tool views. Exclude auth
+Store selected ACP updates and normalized message/tool views. Exclude raw auth
 responses, environment dumps, transport credentials, raw process stderr/login
 transcripts, and hidden reasoning by default. Redact known secrets before
 storage and HTTP output, including secrets inside tool arguments/results.
 Arbitrary Agent output may still contain sensitive workspace data; do not claim
 generic redaction can identify every secret. Database access, backups, and any
 later retention/deletion policy must be treated accordingly.
+
+Keep sanitized authentication observations in a separate `agent_auth` table, not
+in Session/Turn/Events. Persist only Agent/profile identity, sanitized method
+descriptors, last known authentication result, evidence source, verification
+time, known expiry, and invalidation reason. Device codes, pending-login
+interaction data, and raw descriptors with environment values remain short-lived
+in memory. Do not store a second copy of Agent tokens. Persisted observations
+are historical and stale after service restart.
 
 The record is authoritative about what the service observed, not everything the
 Agent ever did. Report `observedAt`, `lastSequence`, and coverage (`complete`,
@@ -258,6 +269,10 @@ automatic authentication is attached to a read.
 | ------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | GET    | `/v2/health`                                                     | HTTP/storage readiness; no Agent startup                                               |
 | GET    | `/v2/agents`                                                     | static choices, cached capabilities with observation time, current local runtime state |
+| GET    | `/v2/agents/{agentId}/auth`                                      | local sanitized methods, last known auth observation and active login progress         |
+| POST   | `/v2/agents/{agentId}/auth`                                      | explicitly begin an advertised/configured method; 202                                  |
+| POST   | `/v2/agents/{agentId}/auth/input`                                | answer an exact allowlisted non-secret login step; 202                                 |
+| POST   | `/v2/agents/{agentId}/auth/logout`                               | explicitly request supported logout; 202                                               |
 | POST   | `/v2/sessions`                                                   | create local Session; 201                                                              |
 | GET    | `/v2/sessions?agentId=...&cursor=...&limit=...`                  | paginated local catalogue                                                              |
 | GET    | `/v2/sessions/{sessionId}`                                       | local metadata, backend availability evidence, history coverage                        |
@@ -305,21 +320,82 @@ does not grant callers access to other users' workspaces.
 
 ## Authentication and CLI
 
-Make Agent authentication an operator provisioning flow, not a credential
-requirement on each HTTP request. The target CLI includes `agents login` for a
-configured Agent/profile, with device link/code presentation and explicit
-storage consent where needed. No generic OAuth app or AHP token handoff. Never
-automatically perform interactive login inside a Turn.
+### Explicit authentication bridge
 
-ACP authentication methods are capability-dependent. Copilot's native device
-command is an Agent-specific adapter, not a promise all ACP Agents implement the
-same login. Unknown authentication is distinct from failure. Missing login
-produces an actionable `agent_auth_required` error; successful login is not
-proof of paid execution entitlement.
+Agent authentication is operator provisioning, not a credential requirement on
+ordinary execution requests. Expose the flow through operator-protected HTTP
+auth routes and the target `agents login` CLI; the external gateway must
+restrict those routes and authorize Agent use. Cached upstream login never
+grants an HTTP caller permission to use that account.
+
+Use `initialize.authMethods` to discover supported flows. For an `agent` method
+(including an omitted type), call ACP `authenticate` with only its advertised
+`methodId`. For a `terminal` method, advertise `auth.terminal` only when the
+complete interactive launcher is implemented: run the configured executable with
+approved method arguments/environment, then reconnect and initialize after
+success. Never pass a terminal method to `authenticate`. Do not allow
+descriptors to select another executable or silently override program lookup,
+interpreter startup, proxy, or TLS trust.
+
+ACP does not standardize device-code terminal output. Copilot's native login
+command, link/code extraction, storage consent, and account verification remain
+an Agent-specific adapter. Public methods can also be configured for this
+adapter when ACP does not advertise the needed flow. No generic OAuth app or AHP
+token handoff, no hidden model probe, and no automatic interactive login inside
+a Turn.
+
+POST auth accepts `{"methodId":"<advertised-or-configured-id>"}` and may
+explicitly prepare a stopped Agent to negotiate methods. One active auth
+operation per Agent/profile; active or uncertain execution blocks a conflicting
+login/logout rather than closing another caller's Session. Return a bounded,
+expiring flow with public device link/code or a configured non-secret input
+step. POST auth/input accepts `stepId` and allowlisted `values`, such as
+explicit plaintext-storage consent; it is not a generic password/token ingestion
+API. Logout calls ACP `logout` only when `agentCapabilities.auth.logout` is
+advertised, or a configured tested native adapter supports it. Otherwise return
+`409 agent_logout_unsupported`; never report a local cache clear as successful
+upstream logout. Logout semantics for existing ACP Sessions are not universal
+and must remain explicit.
+
+### Authentication observation cache
+
+Credentials stay in the dedicated Agent profile or its explicitly configured
+credential store. Cache observations by Agent/profile identity and the current
+runtime generation, not by Session and not as a shared HTTP-user login. Persist
+only the sanitized historical projection described above.
+
+GET auth remains local even when the Agent is stopped or inaccessible. Represent
+the observation independently from the active login flow:
+
+- `lastKnownStatus`: `authenticated`, `required`, or `unknown`.
+- `verifiedAt`, known `expiresAt` or `null`, and the evidence source.
+- `freshness`: `current`, `stale`, or `unknown`, plus an invalidation reason.
+- Sanitized method IDs/names/types and optional public active-flow progress.
+
+`current` means the observation still belongs to this live runtime/profile and
+has no known invalidation; it does not guarantee credentials have not been
+revoked externally. Do not invent an expiry or refresh guarantee when ACP does
+not provide one. Method discovery alone is not authentication evidence.
+
+Runtime restart/reconnection, profile or account configuration change,
+`auth_required`, explicit logout, and known expiry invalidate current evidence.
+Keep the old observation only as `stale`; do not return its success as current
+authorization. Invalidate on logout request before dispatch, even if the outcome
+is uncertain. A subsequent successful explicit authentication can establish new
+evidence.
+
+Cache invalidation does not itself require another human login: reuse the
+configured saved credentials and respect the Agent's actual response. Use a
+tested non-billable verification mechanism when one exists; otherwise keep
+authentication unknown until legitimate protocol/execution evidence appears. Do
+not skip backend authentication checks or accept credentials as valid just
+because the database contains a past success. Missing login yields an actionable
+`agent_auth_required` failure, distinct from network/storage failures and from
+unknown authentication. Successful login is not proof of paid entitlement.
 
 Keep `serve`, local exclusive `init`, and thin HTTP client commands, redesigned
 around `agents`, `sessions`, `turns`, and `events`. Authentication provisioning
-is local to the service deployment and serialized against profile use. Remove
+executes in the service deployment and is serialized against profile use. Remove
 old `hosts`, `chats`, and AHP auth-input commands rather than silently
 translating them. Polling/paginated event reads are sufficient initially; SSE is
 not required for the first implementation.
@@ -382,12 +458,19 @@ Keep old AHP verification evidence explicitly historical, not ACP acceptance.
     visible.
 12. Stop/restart leaves no owned orphan process or transient transport secret.
     Unknown background activity is never treated as idle.
+13. Authentication GETs issue zero ACP requests, including after restart.
+    Restart/profile change/logout/auth challenge/known expiry invalidate cached
+    success. No token or raw login output is persisted or returned; stale
+    observations never suppress `auth_required`, trigger paid probes, or grant
+    inbound HTTP access. Agent-driven and terminal methods follow different
+    flows, and unsupported logout fails explicitly.
 
 ## Protocol references
 
 - [ACP initialization and capabilities](https://agentclientprotocol.com/protocol/initialization)
 - [ACP Session setup, load, and resume](https://agentclientprotocol.com/protocol/session-setup)
 - [ACP prompt flow and updates](https://agentclientprotocol.com/protocol/prompt-turn)
+- [ACP authentication methods and logout](https://agentclientprotocol.com/protocol/v1/authentication.md)
 
 Implement against the selected SDK and negotiated capabilities, not assumptions
 that every Agent has every feature in these evolving references.
