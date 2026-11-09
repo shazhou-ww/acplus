@@ -11,14 +11,15 @@ history over HTTP**.
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
-release candidate is `acplus@0.1.0-canary.20261109.1`, targeting npm `canary`;
-the reserved package's `latest` placeholder is not this runtime.
+published Canary is `acplus@0.1.0-canary.20261109.1` on npm `canary`; the
+reserved package's `latest` placeholder is not this runtime.
 
-After the release has passed registry and installation verification, install the
-exact Canary:
+Registry, provenance and installed CLI/import/init checks passed in
+[GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42594677506).
+Install the exact verified Canary:
 
 ```powershell
-pnpm add --global acplus@0.1.0-canary.20261109.1
+npm install --global acplus@0.1.0-canary.20261109.1
 acplus --version
 ```
 
