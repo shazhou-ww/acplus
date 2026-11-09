@@ -402,14 +402,32 @@ not required for the first implementation.
 
 ## Migration and implementation order
 
-| Phase | Work                                                                                   | Exit gate                                                              |
-| ----- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 1     | `/v2` OpenAPI, schema 2, ID/state/error types, ACP SDK selection                       | contract tests agree with the approved requirements                    |
-| 2     | SQLite schema/migrations, admission journal, event projections/read routes             | restart and all offline GET tests pass without spawning any Agent      |
-| 3     | owned stdio ACP runtime, capability negotiation, callbacks, Copilot login adapter      | fixture lifecycle/auth/policy tests pass; concurrent starts spawn once |
-| 4     | lazy backend sessions, prompt/event persistence, exact cancellation                    | real Copilot prompt and tool event capture pass via `/v2`              |
-| 5     | capability-gated resume/load, replay isolation, crash/unknown handling, idle lifecycle | offline-read/restart/resume and injected-failure gates pass            |
-| 6     | CLI/init/docs/examples and removal of legacy runtime/dependencies                      | package check and clean installed-package acceptance pass              |
+### Independent entry first, replacement after verification
+
+Build the ACP implementation behind a separate entry in the same package,
+initially invoked as `node dist/acp-cli.js`. Do not route the old `ahplex`
+command, exported `start`, or `/v1` requests into it during development. Use its
+own schema-2 configuration, database/data root, profile, and port. This
+temporary coexistence is rollout isolation, not backward compatibility: the new
+entry accepts only `/v2` and never translates old IDs or configuration.
+
+Keep the old entry working while the new entry passes automated, installed
+artifact, and isolated real-Agent tests, including offline reads, authentication
+cache invalidation, restart, cancellation, and failure handling. Then replace
+the normal CLI/library entry with the verified ACP implementation and delete the
+old runtime, routes, adapters, tests tied only to removed behavior, and
+dependencies. Remove the temporary entry when it is redundant. Do not publish a
+second package or maintain two execution stacks permanently. Final
+installed-package acceptance verifies the promoted entry again.
+
+| Phase | Work                                                                                            | Exit gate                                                              |
+| ----- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 1     | `/v2` OpenAPI, schema 2, ID/state/error types, ACP SDK selection                                | contract tests agree with the approved requirements                    |
+| 2     | SQLite schema/migrations, admission journal, event projections/read routes                      | restart and all offline GET tests pass without spawning any Agent      |
+| 3     | owned stdio ACP runtime, capability negotiation, callbacks, Copilot login adapter               | fixture lifecycle/auth/policy tests pass; concurrent starts spawn once |
+| 4     | lazy backend sessions, prompt/event persistence, exact cancellation                             | real Copilot prompt and tool event capture pass via `/v2`              |
+| 5     | capability-gated resume/load, replay isolation, crash/unknown handling, idle lifecycle          | offline-read/restart/resume and injected-failure gates pass            |
+| 6     | promote verified independent entry, update CLI/library/docs, remove legacy runtime/dependencies | package check and promoted installed-package acceptance pass           |
 
 Phases 2 and 3 depend on phase 1 and can be developed independently. Phase 4
 needs both, phase 5 depends on 4, and the final cutover needs all prior gates.

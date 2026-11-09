@@ -112,6 +112,10 @@ unchanged until the tested `/v2` cutover.
 ## 8. Make the cutover explicit
 
 - New `/v2` API and schema 2, without silent `/v1` compatibility.
+- Develop ACP behind an independent entry in the same package, with separate
+  config/data/profile/port. Keep the old entry unchanged until the new path
+  passes automated and isolated real-Agent acceptance; then replace it and
+  remove the legacy stack. Temporary coexistence is not a compatibility layer.
 - Use the official ACP SDK; remove AHP/AHPD/VS Code runtime code at the tested
   cutover rather than retaining unused dual-protocol abstractions.
 - Keep one ESM package and preserve its exports map/files allowlist. Public

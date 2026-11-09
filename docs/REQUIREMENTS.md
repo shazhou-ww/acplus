@@ -15,6 +15,8 @@ is not an AHP host aggregator or a general task queue.
 
 - Direct ACP over owned stdio processes; Copilot CLI is the first integration.
 - New `/v2` API and configuration schema 2; no `/v1` compatibility.
+- Build and verify an independent entry in the same package before replacing the
+  old entry; no compatibility shim or permanent dual-stack runtime.
 - Session creation is local-only; first execution creates the backend Session.
 - Persist user/Agent messages, tool calls/results, and execution observations.
 - Exclude authentication secrets and raw login transcripts.
