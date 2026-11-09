@@ -9,27 +9,26 @@ alias. Historical Silvermoon records and Git commits remain unchanged.
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
 
-The CLI usability changes in this checkout (human-readable defaults,
-`sessions send`, short Session selectors and `sessions delete`) are not yet in
-the published `.5` Canary. Use the built checkout entry for these commands;
-older installed scripts retain their prior behavior until upgraded.
+The CLI now defaults to human-readable output and provides `sessions send`,
+short Session selectors and `sessions delete`. Scripts upgrading from the
+earlier Canaries must add `--json` for machine-readable output.
 
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
-verified release is `acplus@0.1.0-canary.20261109.5` on npm `canary`; the
+release candidate is `acplus@0.1.0-canary.20261110.1` for npm `canary`; the
 reserved package's `latest` placeholder is not this runtime.
 
-This Canary's registry, provenance and installed CLI/import/init checks passed
-in
+The previous Canary's registry, provenance and installed CLI/import/init checks
+passed in
 [GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42647333420).
 The prior `.3` version's independent Ubuntu lifecycle and real Copilot
 acceptance passed; see the
 [deployment evidence](.silvermoon/ideas/01M6ZY4YA4AQSDGPR58KXG3B9Z/outer/Verification.md).
-Install the Windows hidden-helper fix:
+After release verification, install the CLI usability Canary:
 
 ```powershell
-npm install --global acplus@0.1.0-canary.20261109.5
+npm install --global acplus@0.1.0-canary.20261110.1
 acplus --version
 ```
 
