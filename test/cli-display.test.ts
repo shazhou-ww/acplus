@@ -76,7 +76,10 @@ describe("human CLI output and focused help", () => {
     expect(
       humanOutput("agents auth", {
         flow: {
+          operationId: "flow-1",
+          status: "action_required",
           step: {
+            kind: "link",
             url: "https://github.com/login/device",
             userCode: "ABCD-EFGH",
           },
@@ -126,5 +129,86 @@ describe("human CLI output and focused help", () => {
     );
     expect(helpFor(["sessions", "create"])).toContain("--name NAME");
     expect(helpFor(["sessions", "create"])).toContain("may repeat");
+  });
+  it("explains how to continue each login state without exposing credentials", () => {
+    const flow = {
+      agentId: "copilot",
+      operationId: "flow-1",
+      expiresAt: "2030-01-01",
+    };
+    expect(
+      humanOutput("agents login", { ...flow, status: "pending" }),
+    ).toContain("Do not start a second login flow");
+    const code = humanOutput("agents auth", {
+      agentId: "copilot",
+      flow: {
+        ...flow,
+        status: "action_required",
+        step: {
+          kind: "link",
+          url: "https://github.com/login/device",
+          userCode: "ABCD-EFGH",
+        },
+      },
+    });
+    expect(code).toContain("Device code: ABCD-EFGH");
+    expect(code).toContain("acplus agents auth --agent copilot");
+    const consent = humanOutput("agents auth", {
+      agentId: "copilot",
+      flow: {
+        ...flow,
+        status: "action_required",
+        step: {
+          kind: "input",
+          stepId: "exact-step",
+          fields: ["confirmPlaintextStorage"],
+        },
+      },
+    });
+    expect(consent).toContain("exact-step");
+    expect(consent).toContain("--confirm-storage yes");
+    expect(consent).toContain("--confirm-storage no");
+    expect(consent).not.toContain("auth-input.json");
+    expect(consent).toContain("same --config");
+    expect(
+      humanOutput("agents login", { ...flow, status: "succeeded" }),
+    ).toContain("Authentication succeeded");
+    expect(
+      humanOutput("agents login", {
+        ...flow,
+        status: "failed",
+        error: { code: "login_failed" },
+      }),
+    ).toContain("Error: code: login_failed");
+    expect(
+      humanOutput("agents auth", { operationId: "flow-1", status: "pending" }),
+    ).toContain("AGENT-ID");
+    const status = humanOutput("agents auth", {
+      agentId: "copilot",
+      lastKnownStatus: "authenticated",
+      freshness: "stale",
+      verifiedAt: "2030-01-01",
+      invalidationReason: "service_restarted",
+      methods: [{ id: "sign-in", name: "Device login" }],
+      flow: null,
+    });
+    expect(status).toContain("Last observed authentication: authenticated");
+    expect(status).toContain("Evidence freshness: stale");
+    expect(status).toContain("cached evidence, not a live");
+    expect(status).toContain("sign-in (Device login)");
+    expect(humanOutput("agents logout", null)).toContain(
+      "Agent confirmed logout",
+    );
+    const staleFlow = humanOutput("agents auth", {
+      agentId: "copilot",
+      lastKnownStatus: "required",
+      freshness: "stale",
+      flow: { ...flow, status: "succeeded" },
+    });
+    expect(staleFlow).toContain("Last observed authentication: required");
+    expect(staleFlow).not.toContain("Authentication succeeded.");
+    expect(humanOutput("agents auth-input", null)).toContain(
+      "Next, run acplus agents auth",
+    );
   });
 });

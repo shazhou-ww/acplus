@@ -149,9 +149,12 @@ A complete current Turn does not establish complete historical Session coverage.
 Authentication endpoints require operator authorization at the external gateway.
 Ordinary execution requests do not carry provider tokens.
 
-Begin with `{"methodId":"native-login"}` for the configured Copilot adapter, or
-an advertised Agent-driven method. Inspect GET auth for public device URL/code
-and exact input steps. POST auth/input accepts only:
+Begin with `{}` for service-side selection, `{"methodId":"native-login"}` for
+the configured Copilot adapter, or an advertised Agent-driven method. Selection
+uses the configured native adapter when supported on the service host; otherwise
+exactly one supported advertised Agent method is required. Multiple/no choices
+fail explicitly, without guessing or sending a model prompt. Inspect GET auth
+for public device URL/code and exact input steps. POST auth/input accepts only:
 
 ```json
 {

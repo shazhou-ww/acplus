@@ -24,14 +24,14 @@ const commands: Record<string, { usage: string; description: string }> = {
       "List configured Agents and their observed runtime state using a local or explicit remote service.",
   },
   "agents auth": {
-    usage: "agents auth --agent ID",
+    usage: "agents auth --agent ID [--confirm-storage yes|no]",
     description:
-      "Inspect authentication evidence and public login steps. This does not start a paid model probe.",
+      "Show authentication status, public login steps and what to do next. Explicit --confirm-storage yes|no answers the current storage-consent step without hand-writing JSON. Reading status never logs in or sends a paid model probe.",
   },
   "agents login": {
-    usage: "agents login --agent ID --method METHOD",
+    usage: "agents login --agent ID [--method METHOD --no-wait --timeout-ms N]",
     description:
-      "Explicitly start a login flow. Use agents auth to inspect its public URL/code and follow-up steps.",
+      "Start login and wait for public device instructions or a result. The service selects its configured supported native adapter or sole advertised Agent method; multiple choices require --method. Complete the shown browser step, then inspect agents auth. --no-wait returns admission; --timeout-ms bounds waiting (default 300000). No model prompt is sent.",
   },
   "agents auth-input": {
     usage: "agents auth-input --agent ID --input-file FILE|-",
@@ -51,7 +51,7 @@ const commands: Record<string, { usage: string; description: string }> = {
     usage:
       "sessions create --agent ID --working-directory PATH [--name NAME --idle-grace-ms N]",
     description:
-      "Create a Session in an existing absolute directory. Optional names are display-only and may repeat; select Sessions by UUID or unique prefix, not by name. This does not start the Agent.",
+      "Create a Session in an existing directory. Relative paths resolve from the CLI caller's current directory, including with --url; the resulting path must exist on the service host. Optional names are display-only and may repeat; select Sessions by UUID or unique prefix, not by name. This does not start the Agent.",
   },
   "sessions get": {
     usage: "sessions get --session SESSION",
@@ -131,9 +131,45 @@ function display(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function authOutput(value: Record<string, unknown>): string {
+  const agentId =
+    typeof value.agentId === "string" ? value.agentId : "AGENT-ID";
+  const flow = record(value.flow) ? value.flow : value;
+  const next = `acplus agents auth --agent ${agentId}`;
+  const context =
+    "Use the same --config, --data-dir or --url options as this command.";
+  if (typeof flow.operationId !== "string") {
+    const methods = Array.isArray(value.methods)
+      ? value.methods
+          .filter(record)
+          .map((method) => `${display(method.id)} (${display(method.name)})`)
+          .join(", ")
+      : "";
+    return `Agent: ${agentId}\nLast observed authentication: ${display(value.lastKnownStatus)}\nEvidence freshness: ${display(value.freshness)}\nVerified at: ${display(value.verifiedAt)}${value.invalidationReason ? `\nInvalidated by: ${display(value.invalidationReason)}` : ""}${methods ? `\nLogin methods: ${methods}` : ""}\nThis is cached evidence, not a live model/entitlement check.\nTo log in: acplus agents login --agent ${agentId}\n${context}`;
+  }
+  const observed = Object.hasOwn(value, "lastKnownStatus")
+    ? `\nLast observed authentication: ${display(value.lastKnownStatus)}\nEvidence freshness: ${display(value.freshness)}`
+    : "";
+  const heading = `Login: ${display(flow.status)}\nAgent: ${agentId}\nOperation: ${flow.operationId}\nExpires: ${display(flow.expiresAt)}${observed}`;
+  if (flow.status === "succeeded")
+    return `${heading}\n${observed ? "The previous login flow succeeded; interpret current status using the evidence freshness above." : "Authentication succeeded."} This is not a model entitlement or billing guarantee.`;
+  if (flow.status === "failed" || flow.status === "expired")
+    return `${heading}\nError: ${display(flow.error)}\nInspect the current evidence: ${next}\n${context}`;
+  const step = record(flow.step) ? flow.step : undefined;
+  if (step?.kind === "link")
+    return `${heading}\n\nOpen in your browser: ${display(step.url)}\nDevice code: ${display(step.userCode)}\nComplete browser authorization, then run:\n  ${next}\n${context}\nFollow any subsequent storage-consent step. Never paste passwords or tokens into acplus.`;
+  if (step?.kind === "input")
+    return `${heading}\n\nStorage consent is required. Choose yes only if you accept plaintext credential storage; otherwise choose no.\nTo accept:\n  acplus agents auth --agent ${agentId} --confirm-storage yes\nTo decline:\n  acplus agents auth --agent ${agentId} --confirm-storage no\nThen inspect the result:\n  ${next}\n${context}\nThe CLI submits the exact currently requested step (${display(step.stepId)}). Never provide passwords or tokens.`;
+  return `${heading}\nWaiting for Agent login instructions. Continue by running:\n  ${next}\n${context}\nDo not start a second login flow while this one is pending.`;
+}
+
 export function humanOutput(kind: string, value: unknown): string {
   if (kind === "health") return "Service is healthy.";
   if (kind === "sessions delete") return "Session and local history deleted.";
+  if (kind === "agents auth-input")
+    return "Authentication input submitted. Next, run acplus agents auth --agent AGENT-ID using the same Agent ID and --config/--data-dir/--url options to inspect the result.";
+  if (kind === "agents logout")
+    return "Agent confirmed logout. Project files and local Session history are unchanged. This does not revoke unrelated application logins.";
   if (record(value) && typeof value.config === "string")
     return `Configuration created: ${value.config}`;
   if (Array.isArray(value))
@@ -141,6 +177,8 @@ export function humanOutput(kind: string, value: unknown): string {
       ? "No Agents."
       : value.map((item) => humanOutput("agents get", item)).join("\n\n");
   if (!record(value)) return display(value);
+  if (kind === "agents login" || kind === "agents auth")
+    return authOutput(value);
   if (Array.isArray(value.items)) {
     const items: unknown[] = value.items;
     const rows = items.map((item) => {

@@ -22,7 +22,7 @@ app.onRequest(methods.agent.initialize,({params})=>{
  agentCapabilities: mode==='no-resume'?{}: {
  loadSession:mode==='load',sessionCapabilities:mode==='load'?{}:{resume:{}},
  auth:mode==='no-logout'?{}:{logout:{}}},
- authMethods:[{id:'standard',name:'Sign in'},{id:'terminal',name:'Terminal',type:'terminal',args:['UNSAFE'],env:{NODE_OPTIONS:'UNSAFE'}}]};
+ authMethods:mode==='no-auth-methods'?[]:mode==='multiple-auth-methods'?[{id:'one',name:'One'},{id:'two',name:'Two'}]:[{id:'standard',name:'Sign in'},{id:'terminal',name:'Terminal',type:'terminal',args:['UNSAFE'],env:{NODE_OPTIONS:'UNSAFE'}}]};
 });
 app.onRequest(methods.agent.session.new,async({client})=>{
  if(mode==='auth-required')throw RequestError.authRequired();
@@ -523,6 +523,29 @@ describe("owned stable ACP v1 runtime", { timeout: 20_000 }, () => {
       status: 409,
     });
     expect(unsupported.hooks.invalidated).not.toHaveBeenCalledWith("logout");
+  });
+
+  it("chooses a sole supported Agent login method but refuses absent or ambiguous choices", async () => {
+    const { runtime, hooks } = await fixture();
+    await runtime.authenticate(
+      undefined,
+      vi.fn(),
+      vi.fn(),
+      new AbortController().signal,
+    );
+    expect(hooks.authenticated).toHaveBeenCalledWith("agent_authenticate");
+    for (const mode of ["no-auth-methods", "multiple-auth-methods"]) {
+      const { runtime: other, hooks: otherHooks } = await fixture(mode);
+      await expect(
+        other.authenticate(
+          undefined,
+          vi.fn(),
+          vi.fn(),
+          new AbortController().signal,
+        ),
+      ).rejects.toMatchObject({ code: "auth_method_required" });
+      expect(otherHooks.authenticated).not.toHaveBeenCalled();
+    }
   });
 
   it("does not synthesize authentication success after auth-required or cancellation", async () => {

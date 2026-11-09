@@ -137,10 +137,15 @@ configuration is migrated. HTTP payloads remain JSON; CLI scripts explicitly
 select `--json`, while interactive commands default to readable text.
 
 Work directories belong to Sessions, not Agent configuration. `init` does not
-accept `--workspace`; choose an existing absolute `--working-directory` for each
+accept `--workspace`; choose an existing `--working-directory` for each
 `sessions create`. There is no global directory allowlist. For configs created
 by earlier Canaries, remove `agents[].workspaces` before upgrading: the obsolete
 field is rejected, not silently ignored.
+
+CLI relative directories such as `.` or `./project` resolve from your shell's
+current directory. This also applies with `--url`; the resulting absolute path
+must exist on the service host. Direct HTTP callers still supply absolute host
+paths.
 
 `init` requires `--agent ID`; it writes that exact ID and uses it as the initial
 label, rather than inferring an Agent from the executable path. The default
@@ -160,19 +165,23 @@ Ordinary execution requests do not submit provider credentials. Reuse a
 deliberately selected authorized profile, or explicitly provision one:
 
 ```bash
-acplus agents login --agent copilot --method native-login \
-  --url http://127.0.0.1:4280/v2
-acplus agents auth --agent copilot --url http://127.0.0.1:4280/v2
+acplus agents login --agent copilot
+acplus agents auth --agent copilot
 ```
 
-Login returns an expiring flow. Inspect it for the public device URL/code,
-complete browser authorization, and inspect it again. If explicit plaintext
-storage consent is requested, submit the exact step ID:
+Login waits for an actionable step or result and prints the public device
+URL/code with instructions. Complete browser authorization, then run
+`acplus agents auth --agent copilot` with the same service options. `--no-wait`
+opts into an immediate initial-flow response; a wait timeout does not cancel
+login. A method need not be supplied when the service has one supported choice
+or a supported configured native adapter; multiple choices require explicit
+`--method`. If plaintext storage consent is requested, explicitly accept or
+decline without writing an API payload:
 
 ```bash
-printf '%s' '{"stepId":"COPY-EXACT-ID","values":{"confirmPlaintextStorage":"yes"}}' |
-  acplus agents auth-input --agent copilot --input-file - \
-    --url http://127.0.0.1:4280/v2
+acplus agents auth --agent copilot --confirm-storage yes
+# Or: acplus agents auth --agent copilot --confirm-storage no
+acplus agents auth --agent copilot
 ```
 
 Do not send tokens/passwords to this endpoint or put them in command history.
@@ -180,6 +189,11 @@ Raw login output is never published or persisted. Agent-driven ACP methods use
 the advertised `authenticate(methodId)` flow; terminal methods require their
 supported adapter and are not sent to that RPC. Unsupported methods/logout fail
 explicitly.
+
+`agents auth` explains stale versus current evidence and the next step.
+`agents logout --agent copilot` reports success only after the backend confirms;
+unsupported logout fails with guidance and does not erase history or pretend to
+remove credentials. Keep the same `--config`/`--data-dir`/`--url` for a flow.
 
 Cached authentication is **last-observed evidence**, not perpetual validity.
 Restart/reconnect, profile changes, explicit auth/logout, challenges and known

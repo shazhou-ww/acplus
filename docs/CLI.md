@@ -12,6 +12,9 @@ acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
 acplus init --agent ID --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
+acplus agents auth --agent ID [--confirm-storage yes|no]
+acplus agents login --agent ID [--method METHOD --no-wait --timeout-ms N]
+acplus agents logout --agent ID
 acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH --name NAME]
 acplus sessions send SESSION "MESSAGE" [--turn UUID --no-wait --timeout-ms N]
 acplus sessions delete SESSION [--yes]
@@ -148,9 +151,13 @@ generated `id` and initial `label`. IDs are 1..64 ASCII letters, digits,
 underscores or hyphens, starting with a letter or digit. Existing configs are
 not renamed; use their existing IDs when creating Sessions. All three explicit
 flags override their defaults independently. `init` does not select a workspace:
-each Session supplies an existing absolute `--working-directory` at creation.
-`--workspace` is not accepted. `serve` without `--config` reads the fixed home
-path; it never scans the current directory or migrates an old config.
+each Session supplies an existing `--working-directory` at creation. Relative
+CLI paths are also accepted and resolve against the invoking shell's current
+directory, not the config file or background service directory. The CLI sends
+the resulting absolute path even with an explicit remote URL; that path must
+exist on the server. The HTTP API itself still requires an absolute host
+directory. `--workspace` is not accepted. `serve` without `--config` reads the
+fixed home path; it never scans the current directory or migrates an old config.
 `--config -` reads YAML from stdin. It does not install software, launch an
 Agent, log in, query a credential store, or send a paid probe. Provide an
 existing executable, and select a private data root/profile outside future
@@ -167,24 +174,53 @@ acplus serve --config /srv/acplus/config.yaml
 Provision only when needed:
 
 ```bash
-acplus agents login --agent copilot --method native-login
+acplus agents login --agent copilot
 acplus agents auth --agent copilot
 ```
 
-Login starts an explicit expiring flow; inspect auth for the device URL/code,
-then complete authorization in your browser. If a storage-consent step appears,
-submit its exact step ID with only the allowed value:
+Login starts one explicit expiring flow and, by default, waits for public device
+URL/code, a storage-consent step or a terminal result. It prints the browser
+action and the exact follow-up command, rather than only pending metadata. Open
+the shown URL, enter the device code, then run `agents auth` with the same Agent
+and service-selection options. A terminal login failure or expiry returns
+nonzero. `--no-wait` returns the initial flow immediately; `--timeout-ms` bounds
+instruction waiting (default 300000 ms, range 100..86400000). A timeout stops
+waiting, not the login flow; inspect `agents auth` instead of starting another
+login.
+
+`--method` is optional: the service chooses its configured Copilot native
+adapter when supported on that host, otherwise the sole advertised Agent-driven
+method. No method is inferred from the Agent ID. If several choices exist, the
+flow fails with their IDs so the caller can explicitly select `--method`.
+Unsupported terminal methods are not sent as ACP authentication RPCs.
+Initialization may start the Agent but does not execute a model prompt.
+
+`agents auth` displays last-observed status, evidence freshness, available
+methods and the current actionable flow. Historical success is not a live
+login/billing check. `agents logout` waits for the Agent's supported logout
+adapter to confirm success and states that history/projects are unchanged;
+unsupported logout is a clear error, never a fake local logout or credential
+wipe.
+
+If a storage-consent step appears, choose yes only if you accept plaintext
+credential storage, otherwise no:
 
 ```bash
-printf '%s' '{"stepId":"COPY-EXACT-ID","values":{"confirmPlaintextStorage":"yes"}}' |
-  acplus agents auth-input --agent copilot --input-file - \
-    --url http://127.0.0.1:4280/v2
+acplus agents auth --agent copilot --confirm-storage yes
+# Or explicitly decline:
+acplus agents auth --agent copilot --confirm-storage no
+acplus agents auth --agent copilot
 ```
 
 Do not send tokens/passwords to this endpoint or put them in command history.
-Copilot native terminal login currently requires Linux util-linux `script`.
-Configured saved credentials can serve ordinary execution without repeated human
-login. Cached success remains an observation, not perpetual validity.
+The CLI fetches the exact currently active step before submitting consent and
+requires the real existing service owner. A missing/changed step fails without
+starting a new flow. Low-level `agents auth-input --input-file FILE|-` remains
+available for automation with an explicit step ID, but ordinary use needs no
+JSON. Copilot native terminal login currently requires Linux util-linux
+`script`. Configured saved credentials can serve ordinary execution without
+repeated human login. Cached success remains an observation, not perpetual
+validity.
 
 For automation, explicitly select JSON and an idempotency ID:
 

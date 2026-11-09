@@ -252,7 +252,11 @@ export async function copilotLogin(
   platform = process.platform,
 ): Promise<void> {
   if (platform !== "linux")
-    throw new ServiceError("auth_native_pty_unsupported", 409);
+    throw new ServiceError(
+      "auth_native_pty_unsupported",
+      409,
+      "The configured native device-login adapter requires Linux util-linux script. Use a supported advertised Agent login method or explicitly select an already-authorized profile; no login was simulated.",
+    );
   signal.throwIfAborted();
   const loginLifetime = new AbortController();
   signal = AbortSignal.any([signal, loginLifetime.signal]);

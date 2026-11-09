@@ -506,9 +506,9 @@ export class Service {
     return this.store.getTurn(sessionId, turnId);
   }
 
-  beginAuth(agentId: string, methodId: string): AuthFlow {
+  beginAuth(agentId: string, methodId?: string): AuthFlow {
     const agent = this.select(agentId);
-    text(methodId, "methodId");
+    if (methodId !== undefined) text(methodId, "methodId");
     if (agent.busy) throw new ServiceError("agent_busy", 409);
     this.store.invalidateAuth(agentId, "authentication_started");
     agent.busy = true;
@@ -619,6 +619,7 @@ export class Service {
         evidence: "logout",
         verifiedAt: new Date().toISOString(),
       });
+      agent.flow = null;
     } finally {
       agent.busy = false;
     }

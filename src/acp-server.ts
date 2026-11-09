@@ -99,10 +99,15 @@ async function route(service: Service, request: IncomingMessage) {
     if (method === "GET" && operation === undefined)
       return { status: 200, value: service.auth(agentId) };
     if (method === "POST" && operation === undefined) {
-      const value = await body(request, ["methodId"]);
+      const value = await body(request, [], ["methodId"]);
       return {
         status: 202,
-        value: service.beginAuth(agentId, text(value.methodId, "methodId")),
+        value: service.beginAuth(
+          agentId,
+          Object.hasOwn(value, "methodId")
+            ? text(value.methodId, "methodId")
+            : undefined,
+        ),
       };
     }
     if (method === "POST" && operation === "input") {

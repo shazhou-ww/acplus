@@ -249,8 +249,8 @@ export async function run(args: string[]): Promise<void> {
   const commandOptions: Record<string, string[]> = {
     health: ["url"],
     "agents:list": ["url"],
-    "agents:auth": ["url", "agent"],
-    "agents:login": ["url", "agent", "method"],
+    "agents:auth": ["url", "agent", "confirm-storage"],
+    "agents:login": ["url", "agent", "method", "no-wait", "timeout-ms"],
     "agents:auth-input": ["url", "agent", "input-file"],
     "agents:logout": ["url", "agent"],
     "sessions:list": ["url", "agent", "limit", "cursor"],
@@ -313,7 +313,7 @@ export async function run(args: string[]): Promise<void> {
   };
   const requiredOptions: Record<string, string[]> = {
     "agents:auth": ["agent"],
-    "agents:login": ["agent", "method"],
+    "agents:login": ["agent"],
     "agents:auth-input": ["agent", "input-file"],
     "agents:logout": ["agent"],
     "sessions:create": ["agent", "working-directory"],
@@ -328,6 +328,13 @@ export async function run(args: string[]): Promise<void> {
   };
   for (const name of requiredOptions[key] ?? []) requireOption(name);
   const json = opts.json === "true";
+  if (
+    opts["confirm-storage"] !== undefined &&
+    !["yes", "no"].includes(opts["confirm-storage"])
+  )
+    throw new ConfigurationError(
+      "--confirm-storage must be yes or no; credentials are never accepted here",
+    );
   const outputKind = group === "health" ? "health" : `${group} ${action}`;
   const isSend = key === "sessions:send";
   const isStart = isSend || key === "turns:start";
@@ -410,7 +417,9 @@ export async function run(args: string[]): Promise<void> {
         throw new ServiceError(
           result.error.code,
           response.status,
-          result.error.message,
+          result.error.code === "agent_logout_unsupported"
+            ? "This Agent does not support logout through ACP. Nothing was reported as logged out; use the Agent's own supported logout command with the selected profile. Session history is unchanged."
+            : result.error.message,
         );
       throw new ServiceError("http_request_failed", response.status, raw);
     }
@@ -496,7 +505,10 @@ export async function run(args: string[]): Promise<void> {
       path = `/agents/${encodeURIComponent(requireOption("agent"))}/auth`;
       if (action === "login") {
         method = "POST";
-        value = { methodId: requireOption("method") };
+        value =
+          opts.method === undefined
+            ? {}
+            : { methodId: text(opts.method, "method") };
       } else if (action === "auth-input") {
         path += "/input";
         method = "POST";
@@ -530,7 +542,9 @@ export async function run(args: string[]): Promise<void> {
       method = "POST";
       value = {
         agentId: requireOption("agent"),
-        workingDirectory: requireOption("working-directory"),
+        workingDirectory: resolve(
+          text(requireOption("working-directory"), "workingDirectory"),
+        ),
         ...(opts.name === undefined ? {} : { name: text(opts.name, "name") }),
       };
     } else if (action === "get") path += `/${requireOption("session")}`;
@@ -575,7 +589,10 @@ export async function run(args: string[]): Promise<void> {
       config,
       resolve(file),
       integer(opts["idle-grace-ms"], defaultIdleGraceMs, 100, 86400000),
-      action !== "cancel" && action !== "auth-input" && group !== "health",
+      action !== "cancel" &&
+        action !== "auth-input" &&
+        opts["confirm-storage"] === undefined &&
+        group !== "health",
     );
     address = local.url;
   }
@@ -595,6 +612,119 @@ export async function run(args: string[]): Promise<void> {
       );
   }
   const result = await remoteRequest(address ?? "", method, requestPath, value);
+  if (key === "agents:auth" && opts["confirm-storage"] !== undefined) {
+    if (
+      !record(result) ||
+      !record(result.flow) ||
+      result.flow.status !== "action_required" ||
+      !record(result.flow.step) ||
+      result.flow.step.kind !== "input" ||
+      typeof result.flow.step.stepId !== "string" ||
+      !Array.isArray(result.flow.step.fields) ||
+      result.flow.step.fields.length !== 1 ||
+      result.flow.step.fields[0] !== "confirmPlaintextStorage"
+    )
+      throw new ServiceError(
+        "auth_input_unavailable",
+        409,
+        "There is no active plaintext-storage consent step. Inspect agents auth; do not start a replacement login.",
+      );
+    await remoteRequest(address ?? "", "POST", `${path}/input`, {
+      stepId: result.flow.step.stepId,
+      values: { confirmPlaintextStorage: opts["confirm-storage"] },
+    });
+    const updated = await remoteRequest(address ?? "", "GET", path);
+    printResult(outputKind, updated, json);
+    return;
+  }
+  if (key === "agents:login") {
+    if (
+      !record(result) ||
+      typeof result.operationId !== "string" ||
+      typeof result.expiresAt !== "string" ||
+      ![
+        "pending",
+        "action_required",
+        "succeeded",
+        "failed",
+        "expired",
+      ].includes(String(result.status))
+    )
+      throw new ServiceError(
+        "invalid_auth_response",
+        502,
+        "The service did not return a valid login flow; inspect agents auth before retrying.",
+      );
+    let flow = result;
+    const operationId = result.operationId;
+    const deadline = Date.now() + waitTimeout;
+    if (flow.status === "pending" && opts["no-wait"] !== "true") {
+      if (!json)
+        console.error(
+          "Waiting for login instructions. No model prompt is being sent.",
+        );
+      while (flow.status === "pending") {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0)
+          throw new ServiceError(
+            "auth_wait_timeout",
+            408,
+            `Stopped waiting for login ${operationId}. Run acplus agents auth --agent ${requireOption("agent")} with the same service options; do not start another login flow.`,
+          );
+        let observation: unknown;
+        try {
+          observation = await remoteRequest(
+            address ?? "",
+            "GET",
+            path,
+            undefined,
+            Math.max(1, Math.min(30000, remaining)),
+          );
+        } catch (error) {
+          if (Date.now() >= deadline)
+            throw new ServiceError(
+              "auth_wait_timeout",
+              408,
+              `Stopped waiting for login ${operationId}. Inspect agents auth with the same --agent and service options.`,
+            );
+          throw error;
+        }
+        if (
+          !record(observation) ||
+          !record(observation.flow) ||
+          observation.flow.operationId !== operationId ||
+          ![
+            "pending",
+            "action_required",
+            "succeeded",
+            "failed",
+            "expired",
+          ].includes(String(observation.flow.status))
+        )
+          throw new ServiceError(
+            "auth_flow_changed",
+            409,
+            "The login flow is missing or changed; inspect agents auth before retrying.",
+          );
+        flow = observation.flow;
+        if (flow.status === "pending")
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              Math.max(1, Math.min(250, deadline - Date.now())),
+            ),
+          );
+      }
+    }
+    printResult(
+      outputKind,
+      json ? flow : { ...flow, agentId: requireOption("agent") },
+      json,
+    );
+    if (flow.status === "failed" || flow.status === "expired")
+      process.exitCode = 1;
+    return;
+  }
   if (!isSend || opts["no-wait"] === "true") {
     printResult(
       outputKind,

@@ -29,7 +29,7 @@ const state = vi.hoisted(() => ({
   authenticate:
     vi.fn<
       (
-        method: string,
+        method: string | undefined,
         step: (value: AuthStep) => void,
         input: (
           step: Extract<AuthStep, { kind: "input" }>,

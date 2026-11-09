@@ -559,7 +559,7 @@ export class AcpRuntime {
   }
 
   authenticate(
-    methodId: string,
+    methodId: string | undefined,
     onStep: (step: AuthStep) => void,
     requestInput: (
       step: Extract<AuthStep, { kind: "input" }>,
@@ -568,11 +568,18 @@ export class AcpRuntime {
     signal: AbortSignal,
   ): Promise<void> {
     return this.serialize(async () => {
+      let selectedMethod = methodId;
+      if (
+        selectedMethod === undefined &&
+        process.platform === "linux" &&
+        this.agent.authentication?.type === "copilot"
+      )
+        selectedMethod = "native-login";
       signal.throwIfAborted();
       await this.authenticationPreflight();
       signal.throwIfAborted();
       if (
-        methodId === "native-login" &&
+        selectedMethod === "native-login" &&
         this.agent.authentication?.type === "copilot"
       ) {
         this.nativeAuthenticating = true;
@@ -616,18 +623,34 @@ export class AcpRuntime {
       await this.ensure();
       await this.authenticationPreflight();
       signal.throwIfAborted();
+      const available = this.methods().filter((item) => item.type === "agent");
+      if (selectedMethod === undefined) {
+        if (available.length !== 1)
+          throw new ServiceError(
+            "auth_method_required",
+            409,
+            available.length === 0
+              ? "The Agent advertises no supported login methods. Check its authentication adapter and selected profile."
+              : `More than one login method is available. Choose --method from: ${available.map((item) => item.id).join(", ")}`,
+          );
+        selectedMethod = available[0]?.id;
+      }
       const method = this.methods().find(
-        (item) => item.id === methodId && item.type === "agent",
+        (item) => item.id === selectedMethod && item.type === "agent",
       );
       if (method === undefined)
-        throw new ServiceError("auth_method_unsupported", 409);
+        throw new ServiceError(
+          "auth_method_unsupported",
+          409,
+          `Unsupported login method. Supported Agent methods: ${available.map((item) => item.id).join(", ") || "none"}. Use agents auth to inspect methods.`,
+        );
       this.hooks.invalidated("authentication");
       const combined = AbortSignal.any([signal, this.lifetime.signal]);
       try {
         await this.request(() =>
           this.connection!.agent.request(
             methods.agent.authenticate,
-            { methodId },
+            { methodId: method.id },
             this.options(combined),
           ),
         );

@@ -6,7 +6,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import type * as Os from "node:os";
 import type * as LocalService from "../src/local-service.js";
@@ -51,12 +51,23 @@ beforeEach(() => {
   mocks.home.mockReturnValue(tmpdir());
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
-  vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+  vi.spyOn(globalThis, "fetch").mockImplementation((target, options) =>
     Promise.resolve(
-      new Response("{}", {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        typeof target === "string" &&
+          target.endsWith("/auth") &&
+          options?.method === "POST"
+          ? JSON.stringify({
+              operationId: "mock-login",
+              status: "succeeded",
+              expiresAt: "2030-01-01T00:00:00Z",
+            })
+          : "{}",
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
     ),
   );
   mocks.close.mockResolvedValue();
@@ -96,6 +107,383 @@ const session = "12345678-1234-1234-1234-123456789abc";
 const turn = "12345678-1234-1234-1234-123456789abd";
 
 describe("acplus CLI", () => {
+  it("allows login without an API method ID and provides readable logout results", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          operationId: "flow",
+          status: "succeeded",
+          expiresAt: "2030-01-01",
+        }),
+      ),
+    );
+    await run(["agents", "login", "--agent", "copilot", "--url", url]);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/agents/copilot/auth`,
+      expect.objectContaining({ method: "POST", body: "{}" }),
+    );
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining("Authentication succeeded"),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 202 }));
+    await run(["agents", "logout", "--agent", "copilot", "--url", url]);
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining("Agent confirmed logout"),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "agent_logout_unsupported",
+            message: "agent logout unsupported",
+          },
+        }),
+        { status: 409 },
+      ),
+    );
+    await expect(
+      run(["agents", "logout", "--agent", "copilot", "--url", url]),
+    ).rejects.toThrow("Nothing was reported as logged out");
+  });
+  it("does not turn a malformed login response into apparent success", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("{}"));
+    await expect(
+      run(["agents", "login", "--agent", "copilot", "--url", url]),
+    ).rejects.toMatchObject({ code: "invalid_auth_response" });
+    expect(console.log).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("answers only the current explicit storage-consent step without hand-written JSON or new login", async () => {
+    const observation = {
+      agentId: "copilot",
+      flow: {
+        operationId: "flow",
+        status: "action_required",
+        step: {
+          kind: "input",
+          stepId: "current-step",
+          fields: ["confirmPlaintextStorage"],
+        },
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(observation)))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...observation,
+            flow: { operationId: "flow", status: "pending" },
+          }),
+        ),
+      );
+    await run([
+      "agents",
+      "auth",
+      "--agent",
+      "copilot",
+      "--confirm-storage",
+      "yes",
+      "--url",
+      url,
+    ]);
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      `${url}/agents/copilot/auth/input`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          stepId: "current-step",
+          values: { confirmPlaintextStorage: "yes" },
+        }),
+      }),
+    );
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining("Do not start a second login flow"),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ agentId: "copilot", flow: null })),
+    );
+    await expect(
+      run([
+        "agents",
+        "auth",
+        "--agent",
+        "copilot",
+        "--confirm-storage",
+        "no",
+        "--url",
+        url,
+      ]),
+    ).rejects.toMatchObject({ code: "auth_input_unavailable" });
+    await expect(
+      run([
+        "agents",
+        "auth",
+        "--agent",
+        "copilot",
+        "--confirm-storage",
+        "maybe",
+        "--url",
+        url,
+      ]),
+    ).rejects.toThrow("--confirm-storage must be yes or no");
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(1);
+  });
+  it("does not start a replacement service to answer a missing local consent flow", async () => {
+    vi.stubEnv("ACPLUS_URL", undefined);
+    const directory = await root();
+    const file = join(directory, "config.yaml");
+    await writeFile(file, stringify(fixtureConfig(directory)));
+    mocks.local.mockRejectedValueOnce(
+      new ServiceError("local_work_owner_unavailable", 409),
+    );
+    await expect(
+      run([
+        "agents",
+        "auth",
+        "--agent",
+        "copilot",
+        "--confirm-storage",
+        "yes",
+        "--config",
+        file,
+      ]),
+    ).rejects.toMatchObject({ code: "local_work_owner_unavailable" });
+    expect(mocks.local).toHaveBeenLastCalledWith(
+      expect.anything(),
+      file,
+      30000,
+      false,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("resolves relative working directories against caller cwd in local and remote modes", async () => {
+    const directory = await root();
+    const relativeDirectory = "project";
+    await run([
+      "sessions",
+      "create",
+      "--agent",
+      "copilot",
+      "--working-directory",
+      relativeDirectory,
+      "--url",
+      url,
+    ]);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/sessions`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          agentId: "copilot",
+          workingDirectory: resolve(relativeDirectory),
+        }),
+      }),
+    );
+    vi.stubEnv("ACPLUS_URL", undefined);
+    const file = join(directory, "config.yaml");
+    await writeFile(file, stringify(fixtureConfig(directory)));
+    await run([
+      "sessions",
+      "create",
+      "--agent",
+      "copilot",
+      "--working-directory",
+      ".",
+      "--config",
+      file,
+    ]);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/sessions`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          agentId: "copilot",
+          workingDirectory: process.cwd(),
+        }),
+      }),
+    );
+    await expect(
+      run([
+        "sessions",
+        "create",
+        "--agent",
+        "copilot",
+        "--working-directory",
+        " ",
+        "--url",
+        url,
+      ]),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+  });
+
+  it("waits for login instructions instead of leaving users at an unexplained pending operation", async () => {
+    const flow = {
+      operationId: "login-1",
+      status: "pending",
+      expiresAt: "2030-01-01T00:00:00Z",
+    };
+    const actionable = {
+      ...flow,
+      status: "action_required",
+      step: {
+        kind: "link",
+        url: "https://github.com/login/device",
+        userCode: "ABCD-EFGH",
+      },
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(flow)))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ agentId: "copilot", flow: actionable })),
+      );
+    await run([
+      "agents",
+      "login",
+      "--agent",
+      "copilot",
+      "--method",
+      "copilot-login",
+      "--url",
+      url,
+    ]);
+    expect(console.log).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(
+        "Open in your browser: https://github.com/login/device",
+      ),
+    );
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining("Device code: ABCD-EFGH"),
+    );
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining("acplus agents auth --agent copilot"),
+    );
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(1);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/agents/copilot/auth`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(flow)));
+    await run([
+      "agents",
+      "login",
+      "--agent",
+      "copilot",
+      "--method",
+      "copilot-login",
+      "--url",
+      url,
+      "--no-wait",
+      "--json",
+    ]);
+    expect(console.log).toHaveBeenLastCalledWith(JSON.stringify(flow));
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports failed, expired or changed login flows without starting another operation", async () => {
+    const flow = {
+      operationId: "login-1",
+      status: "pending",
+      expiresAt: "2030-01-01T00:00:00Z",
+    };
+    for (const status of ["failed", "expired", "succeeded"]) {
+      process.exitCode = undefined;
+      const completed = {
+        ...flow,
+        status,
+        error:
+          status === "succeeded"
+            ? null
+            : { code: "login_failed", message: "login failed" },
+      };
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(new Response(JSON.stringify(flow)))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ flow: completed })),
+        );
+      await run([
+        "agents",
+        "login",
+        "--agent",
+        "copilot",
+        "--method",
+        "copilot-login",
+        "--url",
+        url,
+        "--json",
+      ]);
+      expect(console.log).toHaveBeenLastCalledWith(JSON.stringify(completed));
+      expect(process.exitCode).toBe(status === "succeeded" ? undefined : 1);
+    }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(flow)))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ flow: { ...flow, operationId: "different" } }),
+        ),
+      );
+    await expect(
+      run([
+        "agents",
+        "login",
+        "--agent",
+        "copilot",
+        "--method",
+        "copilot-login",
+        "--url",
+        url,
+      ]),
+    ).rejects.toMatchObject({ code: "auth_flow_changed" });
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(4);
+  });
+
+  it("bounds login instruction waiting and tells callers to inspect rather than restart", async () => {
+    vi.useFakeTimers();
+    const flow = {
+      operationId: "login-1",
+      status: "pending",
+      expiresAt: "2030-01-01T00:00:00Z",
+    };
+    vi.mocked(fetch).mockImplementation((_target, options) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(options?.method === "POST" ? flow : { flow }),
+        ),
+      ),
+    );
+    const waiting = expect(
+      run([
+        "agents",
+        "login",
+        "--agent",
+        "copilot",
+        "--method",
+        "copilot-login",
+        "--url",
+        url,
+        "--timeout-ms",
+        "100",
+      ]),
+    ).rejects.toMatchObject({ code: "auth_wait_timeout" });
+    await vi.advanceTimersByTimeAsync(200);
+    await waiting;
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([, options]) => options?.method === "POST"),
+    ).toHaveLength(1);
+  });
   it("sends an optional Session display name without treating it as an identifier", async () => {
     await run([
       "sessions",
@@ -115,7 +503,7 @@ describe("acplus CLI", () => {
       expect.objectContaining({
         body: JSON.stringify({
           agentId: "copilot",
-          workingDirectory: "D:\\project",
+          workingDirectory: resolve("D:\\project"),
           name: "Project review",
         }),
       }),

@@ -74,6 +74,41 @@ afterEach(async () => {
 });
 
 describe("durable ACP HTTP /v2", () => {
+  it("allows explicit login to omit a method for supported service-side selection", async () => {
+    const { server } = await setup();
+    const begin = await api(server.url, "/agents/copilot/auth", "POST", {});
+    expect(begin.status).toBe(202);
+    await viWaitForLogin();
+    async function viWaitForLogin() {
+      const deadline = Date.now() + 10000;
+      for (;;) {
+        const status = object(
+          (await api(server.url, "/agents/copilot/auth")).body,
+        );
+        const flow = object(status.flow);
+        if (flow.status !== "pending") {
+          expect(flow.status).toBe("succeeded");
+          return;
+        }
+        if (Date.now() > deadline) throw new Error("Login did not finish");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    expect(
+      (
+        await api(server.url, "/agents/copilot/auth", "POST", {
+          methodId: null,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await api(server.url, "/agents/copilot/auth", "POST", {
+          unexpected: true,
+        })
+      ).status,
+    ).toBe(400);
+  });
   it("accepts optional duplicate Session display names and exposes them in local GETs", async () => {
     const { root, server } = await setup();
     const payload = {

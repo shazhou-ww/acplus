@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import {
@@ -253,6 +253,62 @@ describe("offline committed history", () => {
 });
 
 describe("native managed service processes", () => {
+  it("runs automatic method selection, readable status and confirmed logout without a model prompt", async () => {
+    const { directory, config, file } = await fixture();
+    const flow = await command([
+      "agents",
+      "login",
+      "--agent",
+      "copilot",
+      "--config",
+      file,
+      "--idle-grace-ms",
+      "1500",
+    ]);
+    expect(flow).toHaveProperty("status", "succeeded");
+    expect(flow).toHaveProperty("operationId");
+    const auth = await command([
+      "agents",
+      "auth",
+      "--agent",
+      "copilot",
+      "--config",
+      file,
+    ]);
+    expect(auth).toMatchObject({
+      lastKnownStatus: "authenticated",
+      freshness: "current",
+    });
+    const readable = await exec(
+      process.execPath,
+      [cli, "agents", "auth", "--agent", "copilot", "--config", file],
+      { env, timeout: 20000 },
+    );
+    expect(readable.stdout).toContain("Login: succeeded");
+    const logout = await exec(
+      process.execPath,
+      [cli, "agents", "logout", "--agent", "copilot", "--config", file],
+      { env, timeout: 20000 },
+    );
+    expect(logout.stdout).toContain("Agent confirmed logout");
+    expect(
+      await command(["agents", "auth", "--agent", "copilot", "--config", file]),
+    ).toMatchObject({ lastKnownStatus: "required" });
+    await released(config.dataDir);
+    const reader = new Store(
+      join(config.dataDir, "sessions.sqlite"),
+      undefined,
+      true,
+    );
+    try {
+      expect(reader.listSessions({ limit: 100 }).items).toEqual([]);
+    } finally {
+      reader.close();
+    }
+    expect(
+      (await readFile(join(directory, "counter"), "utf8")).trim().split("\n"),
+    ).toHaveLength(1);
+  }, 30000);
   it("supports a complete human conversation and explicit local history deletion through the native CLI", async () => {
     const { directory, config, file } = await fixture();
     const created = await command([
@@ -263,7 +319,7 @@ describe("native managed service processes", () => {
       "--agent",
       "copilot",
       "--working-directory",
-      directory,
+      relative(process.cwd(), directory),
       "--name",
       "Lifecycle conversation",
       "--idle-grace-ms",

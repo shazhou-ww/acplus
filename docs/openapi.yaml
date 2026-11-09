@@ -74,11 +74,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [methodId]
               properties:
                 methodId:
                   type: string
                   minLength: 1
+                  description:
+                    Optional explicit method; omitted selects a supported
+                    configured native adapter or the sole advertised Agent
+                    method, otherwise the flow fails with actionable choices
       responses:
         "202":
           description: Explicit authentication operation admitted
