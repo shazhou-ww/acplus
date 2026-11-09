@@ -2,6 +2,11 @@
 
 ## ACP redesign status
 
+Design work is tracked by the repository-owned
+[ACP HTTP idea](.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Idea.md).
+Detailed contracts will be refined through its implementation phase and exported
+into the project documentation; lifecycle acceptance is explicit.
+
 The approved next design is a **direct ACP-backed `/v2` HTTP service** with
 on-demand Agents and durable local Session history. Session creation and all
 read-only requests will avoid starting an Agent. See the

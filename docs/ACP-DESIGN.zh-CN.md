@@ -5,6 +5,12 @@
 状态：已确认的设计方向与实施计划，尚未实现。当前软件包仍然实现旧版基于 AHP 的
 `/v1` API。
 
+## Silvermoon 设计工作
+
+本次方向由仓库中的
+[ACP HTTP idea](../.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Idea.md)
+推进。理想世界契约定义结果与边界；本文继续作为详细设计草案，不能当作生命周期验收或实现完成的证据。构想验收后，在主体世界细化实施契约，将确认的设计细节导出到本文、英文版、根级需求与约束，以及 HTTP/OpenAPI、CLI 和配置文档。各份导出契约必须一致，并明确区分计划行为与已发布行为。
+
 ## 已确认的决策
 
 - 直接连接支持 ACP 的 Agent。目标执行链路中不再包含 AHP、AHPD 或 VS Code Agent

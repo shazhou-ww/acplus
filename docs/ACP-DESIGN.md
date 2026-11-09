@@ -5,6 +5,17 @@ English | [简体中文](ACP-DESIGN.zh-CN.md)
 Status: approved direction and implementation plan, not implemented behavior.
 The existing package still implements the legacy AHP `/v1` API.
 
+## Silvermoon design work
+
+This direction is tracked by the repository-owned
+[ACP HTTP idea](../.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Idea.md).
+Its Ideal World defines outcomes and boundaries; this document remains the
+detailed design draft, not evidence of lifecycle acceptance or implementation.
+After the ideal gate, refine the Inner World contract and export agreed details
+into this document, its Chinese edition, root requirements/invariants, and
+HTTP/OpenAPI, CLI, and configuration documentation. Keep each exported contract
+consistent and explicitly distinguish planned behavior from shipped behavior.
+
 ## Decisions
 
 - Connect directly to ACP Agents. No AHP, AHPD, or VS Code Agent Host in the
