@@ -42,6 +42,7 @@ export interface ErrorInfo {
 }
 export interface Session {
   sessionId: string;
+  name?: string;
   agentId: string;
   workingDirectory: string;
   profileIdentity: string;

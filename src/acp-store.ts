@@ -86,6 +86,8 @@ function timestamps(value: Record<string, unknown>): boolean {
 function session(value: unknown): value is Session {
   return (
     record(value) &&
+    (value.name === undefined ||
+      (typeof value.name === "string" && value.name.trim() !== "")) &&
     strings(value, [
       "sessionId",
       "agentId",
@@ -401,14 +403,17 @@ export class Store {
     agentId: string,
     workingDirectory: string,
     profileIdentity: string,
+    name?: string,
   ): Session {
     text(agentId, "agentId");
     text(workingDirectory, "workingDirectory");
     text(profileIdentity, "profileIdentity");
+    if (name !== undefined) text(name, "name");
     return this.transaction(() => {
       const now = new Date().toISOString();
       const value: Session = {
         sessionId: randomUUID(),
+        ...(name === undefined ? {} : { name: this.redactor.clean(name) }),
         agentId,
         workingDirectory,
         profileIdentity,

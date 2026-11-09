@@ -66,6 +66,38 @@ afterEach(() => {
 });
 
 describe("direct ACP persistence", () => {
+  it("persists optional display names across reopen, allows duplicate names and preserves unnamed Sessions", () => {
+    const { file } = fixture();
+    const store = open(file);
+    const unnamed = owner(store);
+    const first = store.createSession(
+      "agent",
+      resolve("."),
+      "profile",
+      "项目 review",
+    );
+    const second = store.createSession(
+      "agent",
+      resolve("."),
+      "profile",
+      "项目 review",
+    );
+    expect(first.sessionId).not.toBe(second.sessionId);
+    expect(first.name).toBe("项目 review");
+    expect(unnamed).not.toHaveProperty("name");
+    failure(
+      () => store.createSession("agent", resolve("."), "profile", " "),
+      "invalid_input",
+      400,
+    );
+    store.close();
+    const reader = new Store(file, undefined, true);
+    stores.push(reader);
+    expect(reader.getSession(first.sessionId).name).toBe("项目 review");
+    expect(reader.getSession(second.sessionId).name).toBe("项目 review");
+    expect(reader.getSession(unnamed.sessionId)).not.toHaveProperty("name");
+    expect(reader.listSessions({ limit: 100 }).items).toHaveLength(3);
+  });
   it("deletes only one Session and its local history, refusing active or unknown work", () => {
     const store = open();
     const first = owner(store);

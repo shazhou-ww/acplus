@@ -264,6 +264,8 @@ describe("native managed service processes", () => {
       "copilot",
       "--working-directory",
       directory,
+      "--name",
+      "Lifecycle conversation",
       "--idle-grace-ms",
       "1500",
     ]);
@@ -275,6 +277,16 @@ describe("native managed service processes", () => {
     )
       throw new Error("Missing created Session");
     const sessionId = created.sessionId;
+    expect(created).toHaveProperty("name", "Lifecycle conversation");
+    const named = await command([
+      "sessions",
+      "get",
+      "--session",
+      sessionId,
+      "--config",
+      file,
+    ]);
+    expect(named).toHaveProperty("name", "Lifecycle conversation");
     const result = await exec(
       process.execPath,
       [

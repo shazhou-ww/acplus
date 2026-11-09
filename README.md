@@ -18,19 +18,19 @@ earlier Canaries must add `--json` for machine-readable output.
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
-verified release is `acplus@0.1.0-canary.20261110.1` on npm `canary`; the
+release candidate is `acplus@0.1.0-canary.20261110.2` for npm `canary`; the
 reserved package's `latest` placeholder is not this runtime.
 
-This Canary's registry, provenance and installed CLI/import/init checks passed
-in
+The previous Canary's registry, provenance and installed CLI/import/init checks
+passed in
 [GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42653599591).
 The prior `.3` version's independent Ubuntu lifecycle and real Copilot
 acceptance passed; see the
 [deployment evidence](.silvermoon/ideas/01M6ZY4YA4AQSDGPR58KXG3B9Z/outer/Verification.md).
-Install the CLI usability Canary:
+After release verification, install the explicit-Agent-ID Canary:
 
 ```powershell
-npm install --global acplus@0.1.0-canary.20261110.1
+npm install --global acplus@0.1.0-canary.20261110.2
 acplus --version
 ```
 
@@ -190,6 +190,7 @@ login is not a Copilot entitlement/billing guarantee.
 
 ```bash
 acplus sessions create --agent copilot --working-directory /srv/work/project \
+  --name "Project review" \
   --json
 acplus sessions send SESSION-UUID "Reply with exactly OK. Do not use tools."
 acplus sessions send SESSION-UUID "Now explain the project entry point."
@@ -206,6 +207,10 @@ dispatch, waits, and displays the reply. Use the returned Turn ID for low-level
 queries; scripts use `--json`. `--no-wait` opts into admission only; an explicit
 `--turn UUID` supports idempotent automation. A wait timeout or Ctrl+C does not
 cancel execution, and lost responses are never automatically resent.
+
+Creation accepts an optional `--name` for display in lists and details. Names
+may repeat and are not selectors; use UUIDs or unique prefixes for operations.
+Existing unnamed Sessions remain compatible.
 
 Deletion confirms interactively or requires `--yes` for scripts. Only acplus
 local history is removed, not workspace files, credentials or backend history;

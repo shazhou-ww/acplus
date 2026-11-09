@@ -69,7 +69,8 @@ if safely completed. Cancel and reconcile execution before deletion.
 ```json
 {
   "agentId": "copilot",
-  "workingDirectory": "/srv/work/project"
+  "workingDirectory": "/srv/work/project",
+  "name": "Project review"
 }
 ```
 
@@ -80,6 +81,10 @@ directory; Agent configuration does not impose a workspace-root allowlist. The
 directory is checked again before execution. Relative paths fail with
 `invalid_input`; missing paths or non-directories fail with
 `workspace_unavailable`.
+
+`name` is optional, nonblank text used only for display. It may repeat across
+Sessions. Responses include it only when supplied; historical unnamed Sessions
+omit it. Session/Turn/event operations still address UUIDs, never names.
 
 Submit to `/sessions/{sessionId}/turns`:
 

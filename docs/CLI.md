@@ -12,7 +12,7 @@ acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
 acplus init --agent ID --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
-acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
+acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH --name NAME]
 acplus sessions send SESSION "MESSAGE" [--turn UUID --no-wait --timeout-ms N]
 acplus sessions delete SESSION [--yes]
 acplus turns list|start|get|cancel --session SESSION [--turn UUID --text TEXT --text-file FILE|-]
@@ -22,7 +22,7 @@ acplus events list --session UUID [--turn UUID --after N --limit N]
 ## Conversation and output
 
 ```powershell
-acplus sessions create --agent copilot --working-directory 'D:\Code\ahplex'
+acplus sessions create --agent copilot --working-directory 'D:\Code\ahplex' --name "Project review"
 acplus sessions send SESSION "Explain this project. Do not change files."
 acplus sessions send SESSION "Explain the entry point in more detail."
 acplus sessions delete SESSION
@@ -31,7 +31,11 @@ acplus sessions delete SESSION
 Replace SESSION with the returned UUID or a unique prefix of at least eight
 characters. Prefixes are resolved against the selected local data directory or
 remote service, across all pages; ambiguous selectors fail rather than choosing
-the latest or first Session. Session names and interactive chat are not added.
+the latest or first Session. Optional `sessions create --name NAME` supplies a
+nonblank display name, shown in list/get output and JSON `name`. Duplicate names
+are allowed and names are never selectors; send/get/delete still require UUIDs
+or unique prefixes. Unnamed Sessions omit the optional field and existing
+history remains readable without migration. Interactive chat is not added.
 
 `sessions send` generates a Turn ID, submits once, waits, and prints the final
 reply. The equivalent option form is

@@ -96,6 +96,49 @@ const session = "12345678-1234-1234-1234-123456789abc";
 const turn = "12345678-1234-1234-1234-123456789abd";
 
 describe("acplus CLI", () => {
+  it("sends an optional Session display name without treating it as an identifier", async () => {
+    await run([
+      "sessions",
+      "create",
+      "--agent",
+      "copilot",
+      "--working-directory",
+      "D:\\project",
+      "--name",
+      "Project review",
+      "--url",
+      url,
+      "--json",
+    ]);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/sessions`,
+      expect.objectContaining({
+        body: JSON.stringify({
+          agentId: "copilot",
+          workingDirectory: "D:\\project",
+          name: "Project review",
+        }),
+      }),
+    );
+    await expect(
+      run([
+        "sessions",
+        "create",
+        "--agent",
+        "copilot",
+        "--working-directory",
+        "D:\\project",
+        "--name",
+        " ",
+        "--url",
+        url,
+      ]),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      run(["sessions", "get", "--session", "Project review", "--url", url]),
+    ).rejects.toThrow("Session must be a UUID");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
   it("generates Turn IDs before dispatch and accepts direct text without contaminating JSON stdout", async () => {
     await run([
       "turns",

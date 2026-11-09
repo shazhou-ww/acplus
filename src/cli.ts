@@ -254,7 +254,7 @@ export async function run(args: string[]): Promise<void> {
     "agents:auth-input": ["url", "agent", "input-file"],
     "agents:logout": ["url", "agent"],
     "sessions:list": ["url", "agent", "limit", "cursor"],
-    "sessions:create": ["url", "agent", "working-directory"],
+    "sessions:create": ["url", "agent", "working-directory", "name"],
     "sessions:get": ["url", "session"],
     "sessions:delete": ["url", "session", "yes"],
     "sessions:send": [
@@ -531,6 +531,7 @@ export async function run(args: string[]): Promise<void> {
       value = {
         agentId: requireOption("agent"),
         workingDirectory: requireOption("working-directory"),
+        ...(opts.name === undefined ? {} : { name: text(opts.name, "name") }),
       };
     } else if (action === "get") path += `/${requireOption("session")}`;
     else if (action === "list") {

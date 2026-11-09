@@ -111,4 +111,20 @@ describe("human CLI output and focused help", () => {
     expect(() => helpFor(["bad"])).toThrow("Unknown command");
     expect(() => helpFor(["sessions", "bad"])).toThrow("Unknown command");
   });
+  it("shows Session names in human lists/details without replacing stable IDs", () => {
+    const session = {
+      sessionId: "uuid",
+      name: "Project review",
+      agentId: "agent",
+      workingDirectory: "D:\\project",
+    };
+    expect(humanOutput("sessions get", session)).toContain(
+      "Session: uuid\nName: Project review\n",
+    );
+    expect(humanOutput("sessions list", { items: [session] })).toBe(
+      "uuid  Project review  agent  D:\\project",
+    );
+    expect(helpFor(["sessions", "create"])).toContain("--name NAME");
+    expect(helpFor(["sessions", "create"])).toContain("may repeat");
+  });
 });

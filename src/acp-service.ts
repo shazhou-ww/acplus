@@ -278,11 +278,15 @@ export class Service {
     });
   }
 
-  async createSession(agentId: string, directory: string): Promise<Session> {
+  async createSession(
+    agentId: string,
+    directory: string,
+    name?: string,
+  ): Promise<Session> {
     const agent = this.select(agentId);
     const canonical = await workspace(directory);
     this.assertReady();
-    return this.store.createSession(agentId, canonical, agent.identity);
+    return this.store.createSession(agentId, canonical, agent.identity, name);
   }
 
   deleteSession(sessionId: string): void {

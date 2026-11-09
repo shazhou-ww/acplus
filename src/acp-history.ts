@@ -19,6 +19,7 @@ export function integer(
 export function publicSession(session: Session) {
   return {
     sessionId: session.sessionId,
+    ...(session.name === undefined ? {} : { name: session.name }),
     agentId: session.agentId,
     workingDirectory: session.workingDirectory,
     createdAt: session.createdAt,

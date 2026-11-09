@@ -17,7 +17,11 @@ import {
   verifies,
 } from "./local-service.js";
 
-async function body(request: IncomingMessage, keys: string[]) {
+async function body(
+  request: IncomingMessage,
+  keys: string[],
+  optional: string[] = [],
+) {
   if (
     request.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() !==
     "application/json"
@@ -40,7 +44,9 @@ async function body(request: IncomingMessage, keys: string[]) {
   }
   if (
     !record(value) ||
-    Object.keys(value).length !== keys.length ||
+    Object.keys(value).some(
+      (key) => !keys.includes(key) && !optional.includes(key),
+    ) ||
     keys.some((key) => !Object.hasOwn(value, key))
   )
     throw new ServiceError(
@@ -124,13 +130,18 @@ async function route(service: Service, request: IncomingMessage) {
   if (url.pathname === "/v2/sessions") {
     if (method === "POST") {
       query();
-      const value = await body(request, ["agentId", "workingDirectory"]);
+      const value = await body(
+        request,
+        ["agentId", "workingDirectory"],
+        ["name"],
+      );
       return {
         status: 201,
         value: publicSession(
           await service.createSession(
             text(value.agentId, "agentId"),
             text(value.workingDirectory, "workingDirectory"),
+            Object.hasOwn(value, "name") ? text(value.name, "name") : undefined,
           ),
         ),
       };

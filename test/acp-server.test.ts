@@ -74,6 +74,43 @@ afterEach(async () => {
 });
 
 describe("durable ACP HTTP /v2", () => {
+  it("accepts optional duplicate Session display names and exposes them in local GETs", async () => {
+    const { root, server } = await setup();
+    const payload = {
+      agentId: "copilot",
+      workingDirectory: root,
+      name: "Review project",
+    };
+    const created = await api(server.url, "/sessions", "POST", payload);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ name: payload.name });
+    const id = text(object(created.body).sessionId, "sessionId");
+    expect((await api(server.url, "/sessions", "POST", payload)).status).toBe(
+      201,
+    );
+    expect((await api(server.url, `/sessions/${id}`)).body).toMatchObject({
+      name: payload.name,
+    });
+    const listed = object((await api(server.url, "/sessions")).body);
+    expect(listed.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sessionId: id, name: payload.name }),
+      ]),
+    );
+    for (const name of ["", " ", null, 2, {}])
+      expect(
+        (await api(server.url, "/sessions", "POST", { ...payload, name }))
+          .status,
+      ).toBe(400);
+    expect(
+      (await api(server.url, "/sessions", "POST", { ...payload, extra: true }))
+        .status,
+    ).toBe(400);
+    const unnamedId = await session(server.url, root);
+    expect(
+      (await api(server.url, `/sessions/${unnamedId}`)).body,
+    ).not.toHaveProperty("name");
+  });
   it("deletes committed Session history with explicit busy and missing errors", async () => {
     const { root, service, server } = await setup();
     const id = await session(server.url, root);

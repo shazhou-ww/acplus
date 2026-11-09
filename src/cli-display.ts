@@ -49,9 +49,9 @@ const commands: Record<string, { usage: string; description: string }> = {
   },
   "sessions create": {
     usage:
-      "sessions create --agent ID --working-directory PATH [--idle-grace-ms N]",
+      "sessions create --agent ID --working-directory PATH [--name NAME --idle-grace-ms N]",
     description:
-      "Create a Session in an existing absolute directory. This does not start the Agent.",
+      "Create a Session in an existing absolute directory. Optional names are display-only and may repeat; select Sessions by UUID or unique prefix, not by name. This does not start the Agent.",
   },
   "sessions get": {
     usage: "sessions get --session SESSION",
@@ -148,7 +148,7 @@ export function humanOutput(kind: string, value: unknown): string {
       if (kind === "events list")
         return `${display(item.sequence)} [${display(item.source)}] ${display(item.type)}: ${record(item.payload) && record(item.payload.content) && typeof item.payload.content.text === "string" ? item.payload.content.text : display(item.payload)}`;
       if (kind === "sessions list")
-        return `${display(item.sessionId)}  ${display(item.agentId)}  ${display(item.workingDirectory)}`;
+        return `${display(item.sessionId)}  ${typeof item.name === "string" ? `${item.name}  ` : ""}${display(item.agentId)}  ${display(item.workingDirectory)}`;
       return `${display(item.turnId)}  ${display(item.state)}  ${display(item.response)}`;
     });
     const cursor =
@@ -166,7 +166,7 @@ export function humanOutput(kind: string, value: unknown): string {
   if (typeof value.turnId === "string")
     return `Turn: ${value.turnId}\nSession: ${display(value.sessionId)}\nStatus: ${display(value.state)}${typeof value.response === "string" && value.response ? `\n\n${value.response}` : ""}${value.error ? `\nError: ${display(value.error)}` : ""}`;
   if (typeof value.sessionId === "string")
-    return `Session: ${value.sessionId}\nAgent: ${display(value.agentId)}\nDirectory: ${display(value.workingDirectory)}`;
+    return `Session: ${value.sessionId}${typeof value.name === "string" ? `\nName: ${value.name}` : ""}\nAgent: ${display(value.agentId)}\nDirectory: ${display(value.workingDirectory)}`;
   return Object.entries(value)
     .map(([key, item]) => `${key}: ${display(item)}`)
     .join("\n");

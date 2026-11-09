@@ -33,6 +33,10 @@ describe("acplus publishing contract", () => {
     expect(workflow).toContain(
       "generated.agents[0].id, explicitAgent ? 'fixture-agent' : 'copilot'",
     );
+    expect(workflow).toContain("sessionNameSmoke = 'passed'");
+    expect(workflow).toContain(
+      "listed.items.filter(item => item.name === first.name).length, 2",
+    );
     for (const legacy of [
       "@ahpd",
       "--runtime-root",

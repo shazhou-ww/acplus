@@ -300,5 +300,28 @@ jobs:
              if (process.argv[1]) api.validateConfig(await api.loadConfig(process.argv[1]));`,
             initConfig,
           ], { cwd: directory, stdio: 'inherit' });
-          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: 'passed' }));
+          let sessionNameSmoke = 'not-supported-by-historical-release';
+          if (rootHelp.includes('--name NAME')) {
+            const createArgs = ['sessions', 'create', '--agent', generated.agents[0].id, '--working-directory', workspace, '--name', 'Repeated display name', '--config', initConfig, '--idle-grace-ms', '1000', '--json'];
+            const first = JSON.parse(execFileSync(executable, createArgs, { encoding: 'utf8' }));
+            const second = JSON.parse(execFileSync(executable, createArgs, { encoding: 'utf8' }));
+            assert.equal(first.name, 'Repeated display name');
+            assert.equal(second.name, first.name);
+            assert.notEqual(first.sessionId, second.sessionId);
+            const got = JSON.parse(execFileSync(executable, ['sessions', 'get', '--session', first.sessionId, '--config', initConfig, '--json'], { encoding: 'utf8' }));
+            assert.equal(got.name, first.name);
+            assert.match(execFileSync(executable, ['sessions', 'get', '--session', first.sessionId, '--config', initConfig], { encoding: 'utf8' }), /Name: Repeated display name/);
+            const listed = JSON.parse(execFileSync(executable, ['sessions', 'list', '--config', initConfig, '--json'], { encoding: 'utf8' }));
+            assert.equal(listed.items.filter(item => item.name === first.name).length, 2);
+            for (const item of [first, second]) {
+              const deleted = JSON.parse(execFileSync(executable, ['sessions', 'delete', item.sessionId, '--yes', '--config', initConfig, '--idle-grace-ms', '1000', '--json'], { encoding: 'utf8' }));
+              assert.equal(deleted.deleted, true);
+            }
+            const deadline = Date.now() + 10000;
+            while (existsSync(join(data, 'owner.lock')) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+            assert.equal(existsSync(join(data, 'owner.lock')), false, 'Installed test service must release ownership after idle');
+            assert.equal(existsSync(join(data, 'service.json')), false);
+            sessionNameSmoke = 'passed';
+          }
+          console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: 'passed', sessionNameSmoke }));
           NODE

@@ -170,6 +170,12 @@ paths:
               additionalProperties: false
               required: [agentId, workingDirectory]
               properties:
+                name:
+                  type: string
+                  minLength: 1
+                  description:
+                    Optional nonblank display name; duplicates allowed, never a
+                    Session selector
                 agentId:
                   type: string
                   minLength: 1
@@ -441,6 +447,11 @@ components:
           backendBound,
         ]
       properties:
+        name:
+          type: string
+          minLength: 1
+          description:
+            Optional display-only name; unnamed legacy Sessions omit this field
         sessionId:
           type: string
           format: uuid
