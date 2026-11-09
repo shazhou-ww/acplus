@@ -26,6 +26,7 @@ describe("acplus publishing contract", () => {
     );
     expect(workflow).toContain("`acplus@${version}`");
     expect(workflow).toContain("generated.schemaVersion, 2");
+    expect(workflow).toContain("args.filter(arg => arg !== '--json')");
     for (const legacy of [
       "@ahpd",
       "--runtime-root",

@@ -271,7 +271,7 @@ jobs:
           const refuse = target => {
             let refused = false;
             try {
-              execFileSync(executable, [...args, '--config', target], { encoding: 'utf8', stdio: 'pipe' });
+              execFileSync(executable, [...args.filter(arg => arg !== '--json'), '--config', target], { encoding: 'utf8', stdio: 'pipe' });
             } catch (error) {
               assert.equal(error.status, 2);
               assert.match(error.stderr, /Configuration must be a new file/);
