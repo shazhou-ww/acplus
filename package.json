@@ -50,7 +50,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
-    "lint:package": "publint",
+    "lint:package": "publint && node scripts/check-cli-entry.js",
     "prepack": "pnpm build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

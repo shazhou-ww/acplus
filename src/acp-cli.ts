@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigurationError, record, ServiceError } from "./acp-common.js";
@@ -320,7 +320,7 @@ export async function run(args: string[]): Promise<void> {
 
 if (
   process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  (await realpath(resolve(process.argv[1]))) === fileURLToPath(import.meta.url)
 ) {
   void run(process.argv.slice(2)).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : "Operation failed");
