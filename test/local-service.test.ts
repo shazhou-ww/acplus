@@ -14,10 +14,30 @@ import {
 } from "../src/local-service.js";
 import { fixtureConfig } from "./acp-fixture.js";
 
-const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  spawn: vi.fn(),
+  exec: vi.fn<
+    (
+      command: string,
+      args: readonly string[] | null | undefined,
+      options: ChildProcess.ExecFileOptions | null | undefined,
+    ) => void
+  >(),
+}));
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof ChildProcess>();
-  return { ...actual, spawn: mocks.spawn };
+  const { promisify } = await import("node:util");
+  const execute = promisify(actual.execFile);
+  const execFile = Object.assign(
+    (...args: Parameters<typeof actual.execFile>) => actual.execFile(...args),
+    {
+      [promisify.custom]: (...args: Parameters<typeof execute>) => {
+        mocks.exec(...args);
+        return execute(...args);
+      },
+    },
+  );
+  return { ...actual, spawn: mocks.spawn, execFile };
 });
 const roots: string[] = [];
 async function fixture() {
@@ -31,6 +51,7 @@ async function fixture() {
 afterEach(async () => {
   vi.restoreAllMocks();
   mocks.spawn.mockReset();
+  mocks.exec.mockClear();
   await Promise.all(
     roots
       .splice(0)
@@ -89,6 +110,23 @@ describe("local startup failure boundaries", () => {
     child.emit("message", {});
     child.emit("message", { error: 7 });
     await release?.();
+    if (process.platform === "win32") {
+      expect(
+        mocks.exec.mock.calls.some(([name]) => name === "whoami.exe"),
+      ).toBe(true);
+      expect(
+        mocks.exec.mock.calls.some(
+          ([name, args]) => name === "icacls.exe" && args?.includes("/grant:r"),
+        ),
+      ).toBe(true);
+      expect(
+        mocks.exec.mock.calls.some(
+          ([name, args]) => name === "icacls.exe" && args?.length === 1,
+        ),
+      ).toBe(true);
+      for (const [, , options] of mocks.exec.mock.calls)
+        expect(options).toEqual({ windowsHide: true });
+    }
   });
 
   it("rejects child startup errors or early exit rather than looping or claiming success", async () => {

@@ -23,16 +23,16 @@ let userSid: Promise<string> | undefined;
 let userAccount = "";
 
 function windowsSid(): Promise<string> {
-  userSid ??= exec("whoami.exe", ["/user", "/fo", "csv", "/nh"]).then(
-    ({ stdout }) => {
-      const sid = /S-1-\d+(?:-\d+)+/u.exec(stdout)?.[0];
-      const account = /^"([^"]+)"/u.exec(stdout)?.[1];
-      if (sid === undefined || account === undefined)
-        throw new ServiceError("local_discovery_permissions", 503);
-      userAccount = account.toLowerCase();
-      return sid;
-    },
-  );
+  userSid ??= exec("whoami.exe", ["/user", "/fo", "csv", "/nh"], {
+    windowsHide: true,
+  }).then(({ stdout }) => {
+    const sid = /S-1-\d+(?:-\d+)+/u.exec(stdout)?.[0];
+    const account = /^"([^"]+)"/u.exec(stdout)?.[1];
+    if (sid === undefined || account === undefined)
+      throw new ServiceError("local_discovery_permissions", 503);
+    userAccount = account.toLowerCase();
+    return sid;
+  });
   return userSid;
 }
 
@@ -51,19 +51,18 @@ export async function canonicalDataDir(directory: string): Promise<string> {
 async function privateFile(path: string): Promise<void> {
   if (process.platform === "win32") {
     const sid = await windowsSid();
-    await exec("icacls.exe", [
-      path,
-      "/inheritance:r",
-      "/grant:r",
-      `*${sid}:(F)`,
-    ]);
+    await exec(
+      "icacls.exe",
+      [path, "/inheritance:r", "/grant:r", `*${sid}:(F)`],
+      { windowsHide: true },
+    );
   }
 }
 
 async function checkPrivateFile(path: string): Promise<void> {
   if (process.platform !== "win32") return;
   await windowsSid();
-  const { stdout } = await exec("icacls.exe", [path]);
+  const { stdout } = await exec("icacls.exe", [path], { windowsHide: true });
   const lines = stdout.split(/\r?\n/u);
   const first = lines[0]?.toLowerCase() ?? "";
   if (

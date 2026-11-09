@@ -46,8 +46,9 @@ not change an existing service. The service uses an ephemeral loopback port and
 one canonical-data-directory writer; first callers can race safely. Startup
 readiness is bounded to 15 seconds, with explicit startup/ownership/ discovery
 errors. Native detached startup works on Windows and Linux, independent of
-caller lifetime. Private owner-only discovery and HMAC proof/signatures prevent
-trusting a PID or arbitrary port listener.
+caller lifetime. Windows discovery/account/ACL helper processes run with hidden
+windows, as do the background service and Agent. Private owner-only discovery
+and HMAC proof/signatures prevent trusting a PID or arbitrary port listener.
 
 Automatic idle shutdown stops admission before draining accepted requests. No
 pending prompt, authentication flow, observed/ambiguous Agent background work or
