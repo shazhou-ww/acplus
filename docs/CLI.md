@@ -1,8 +1,9 @@
 # MVP CLI design
 
-Status: implemented CLI contract. The CLI starts the service or acts as a thin
-client of the [AHP-native HTTP API](API.md). The
-[MVP requirements](REQUIREMENTS.md) define its scope.
+Status: implemented legacy CLI contract. The CLI starts the service or acts as a
+thin client of the [AHP-native `/v1` HTTP API](API.md). The replacement CLI
+scope is planned in [ACP-DESIGN.md](ACP-DESIGN.md#authentication-and-cli), not
+implemented here.
 
 The optional AHPD native device flow uses these same client commands in both TTY
 and JSON modes. `auth get` exposes only the device link/code or the

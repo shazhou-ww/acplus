@@ -1,9 +1,12 @@
 # Static host configuration design
 
-Status: implemented configuration format.
+Status: implemented legacy schema-1 configuration format. Schema 2 for the
+direct ACP runtime is planned in
+[ACP-DESIGN.md](ACP-DESIGN.md#configuration-and-ownership), not implemented
+here.
 
-This configuration serves the [AHP-native MVP requirements](REQUIREMENTS.md). It
-registers processes and login mechanisms, not Sessions, Chats, or queued work.
+This configuration serves the [legacy AHP `/v1` API](API.md). It registers
+processes and login mechanisms, not Sessions, Chats, or queued work.
 
 The [JSON Schema](host-config.schema.json) defines the common shape. The
 [example](hosts.example.json) contains no secrets and demonstrates two on-demand

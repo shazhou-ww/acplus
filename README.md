@@ -1,15 +1,28 @@
 # ahplex
 
+## ACP redesign status
+
+The approved next design is a **direct ACP-backed `/v2` HTTP service** with
+on-demand Agents and durable local Session history. Session creation and all
+read-only requests will avoid starting an Agent. See the
+[ACP design and implementation plan](docs/ACP-DESIGN.md)
+([简体中文](docs/ACP-DESIGN.zh-CN.md)). This is a design target, not shipped
+functionality: the implementation and usage below still describe the legacy AHP
+`/v1` release. No existing deployment is migrated or modified by this planning
+change.
+
+## Current implementation
+
 One ESM TypeScript package for managing **owned AHP hosts**, their upstream
 authentication, and native **Sessions → Chats → Turns** over HTTP. There is no
 Task API, queue, worker HTTP bridge, ahpc dependency, or private SDK patch.
 
 The fourteen `/v1` operations in [OpenAPI](docs/openapi.yaml) are implemented.
 See [API](docs/API.md), [CLI](docs/CLI.md),
-[configuration](docs/HOST-CONFIG.md), [requirements](docs/REQUIREMENTS.md), and
-[invariants](DESIGN-INVARIANTS.md). Real-provider acceptance is tracked
-separately from the implemented contract; verification limits are described
-below.
+[configuration](docs/HOST-CONFIG.md). The [requirements](docs/REQUIREMENTS.md)
+and [invariants](DESIGN-INVARIANTS.md) now describe the ACP target, not the
+current runtime. Real-provider acceptance is tracked separately from the
+implemented contract; verification limits are described below.
 
 ## Install and run
 

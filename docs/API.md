@@ -1,10 +1,11 @@
 # AHP-native MVP API
 
-Status: implemented MVP contract. This replaces the earlier task-centric API.
-Real-provider acceptance is tracked separately in the Silvermoon idea. Start
-with [requirements](REQUIREMENTS.md) and [invariants](../DESIGN-INVARIANTS.md).
-The [OpenAPI contract](openapi.yaml) is the machine-readable source;
-[HTML reference](api.html) is generated from it.
+Status: implemented legacy AHP `/v1` contract. The replacement `/v2` contract is
+planned in [ACP-DESIGN.md](ACP-DESIGN.md), not implemented here. The
+[requirements](REQUIREMENTS.md) and [invariants](../DESIGN-INVARIANTS.md) now
+describe that target. Real-provider acceptance is tracked separately in the
+Silvermoon idea. The [OpenAPI contract](openapi.yaml) is the machine-readable
+source; [HTML reference](api.html) is generated from it.
 
 ## Resource model
 

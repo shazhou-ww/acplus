@@ -1,107 +1,114 @@
-# Design invariants
+# ACP design invariants
 
-Status: implementation contract. This document and
-[MVP requirements](docs/REQUIREMENTS.md) replace the earlier task-centric
-design. The README describes implemented behavior and its verification limits.
-Changes to these boundaries require an explicit design decision.
+Status: target implementation contract, not a description of current `/v1`
+behavior. These invariants and the [requirements](docs/REQUIREMENTS.md) govern
+the [ACP redesign](docs/ACP-DESIGN.md). The existing AHP implementation remains
+unchanged until the tested `/v2` cutover.
 
-## 1. One service, native AHP resources
+## 1. HTTP resources belong to the service
 
-ahplex aggregates configured AHP hosts, owns their lifecycle, and bridges their
-authentication. It provides a small HTTP surface over native Sessions, Chats,
-and Turns, not a new execution platform.
+- A configured Agent is not a running process.
+- A Session is one conversation with a stable local ID and an optional opaque
+  ACP backend binding.
+- A Turn has a caller-chosen local ID, unique within its Session.
+- Events are durable ordered observations with explicit source/coverage.
+- Do not introduce synthetic Chats, Task/job aliases, or pretend a local Turn ID
+  is an ACP-native identifier.
+- Backend bindings include Agent/profile identity. Configuration changes must
+  not resume a different conversation under an old local Session ID.
 
-- A Session is a working context containing Chats, not a Project.
-- A Chat is a conversation thread; a Turn is one initiated execution cycle, not
-  an individual model call or tool call.
-- Preserve AHP Session/Chat URIs and turn IDs. Always scope them to a host;
-  turns additionally belong to a specific Chat.
-- Do not introduce Task/job resources, global ID aliases, or duplicate turn
-  state machines.
-- `defaultChat`, `origin`, and `interactivity` retain their separate AHP
-  meanings. Do not assume the first Chat is default or that a non-default Chat
-  is a subagent.
-- AHP capabilities determine supported actions. Do not silently simulate an
-  unsupported Chat operation by creating a different resource.
+## 2. Reads and Session creation never launch Agents
 
-## 2. Static registry and owned processes
+- Every HTTP GET is answered locally, including when the Agent is unavailable.
+- No implicit backend catalogue, authentication, synchronization, load/resume,
+  or live-read fallback.
+- Session creation validates configuration/workspace and persists only local
+  metadata. The first admitted execution performs backend creation.
+- Expose observation time and partial/unknown coverage. Unknown local IDs may
+  return 404; missing cached portions of a known Session must not masquerade as
+  complete empty history.
 
-- Register hosts from one static config at startup, supplied by file or stdin.
-  Host IDs are unique. No dynamic registration, hot reload, or endpoint
-  discovery from unrelated editors/accounts.
-- Every registered host has startup configuration and a start/stop adapter.
-  There is no external/managed mode or attach-only host.
-- Startup is explicit or on-demand according to configuration, not
-  unconditional. Coalesce concurrent starts; require protocol readiness, not
-  just a live PID.
-- Reconnect a transport without spawning a duplicate process. Process restart is
-  a separate lifecycle decision and must not silently replay work.
-- Only terminate owned processes. Reject explicit stop while turns, unknown
-  outcomes, or authentication are active; unknown host activity is not idle.
-- Failure of one host does not stop unrelated hosts or the HTTP service.
-- One `dataDir` owns runtime data, with `hosts\<hostId>` subdirectories.
-  Different test/service instances use different roots. Directory separation is
-  not an OS sandbox, and does not relocate agent working directories.
+## 3. Own and constrain every runtime
 
-## 3. No task queue
+- Agents are registered from static schema-2 configuration. Requests cannot
+  supply startup commands, credentials, profiles, MCP servers, or env overrides.
+- One owned stdio runtime per configured Agent; coalesce concurrent starts.
+- Require ACP initialization and capability negotiation before Session use.
+- Use explicitly selected dedicated profiles; no ambient credential discovery or
+  copying, and no shared profile across active runtimes.
+- Enforce canonical workspace roots and configured callback permission policy.
+  Neither process/profile separation nor tool policy is an OS sandbox.
+- Initially serialize prompts per Agent and Session; reject busy input rather
+  than queueing it or inventing generic ACP concurrency support.
+- Idle means no pending execution/load/auth/callback or known background work.
+  Unknown activity is not idle. Only terminate owned process trees.
 
-- Submit to an explicitly selected Chat. One active turn per Chat; reject busy
-  submissions rather than queueing them in ahplex.
-- Concurrent requests must not race past the busy check. The host remains
-  authoritative and can reject a submission accepted by local checks.
-- Read/cancel the exact `(hostId, chat URI, turnId)`; never substitute "latest
-  turn".
-- Represent completed outcomes with AHP's `complete`, `cancelled`, and `error`.
-  An active-turn projection may say `running`; that is not another AHP terminal
-  state. Observation failure is an HTTP error, not a turn outcome.
-- A lost connection or response cannot justify success, failure, cancellation,
-  or automatic resubmission. Reconcile with host state before further writes.
-- A known input/approval block must be visible. The MVP does not pretend to
-  answer unsupported prompts or silently grant tool permissions.
-- Durable execution records and automatic recovery are not promised.
+## 4. Persistence precedes execution claims
 
-## 4. Authentication bridge, not identity system
+- Commit admission, the user message, and identity before HTTP 202.
+- Commit dispatch intent before sending an ACP prompt.
+- Persist streamed updates in order with bounded buffering and explicit failure
+  handling; never silently drop content.
+- Commit all preceding updates and terminal evidence before publishing a
+  terminal observation.
+- Store selected typed message/tool/state content, not credentials, raw login
+  transcripts, environment dumps, or unfiltered process output.
+- Redact known secrets before storage and output. Do not claim this detects
+  arbitrary secrets in Agent-generated workspace content.
+- Storage failure stops new admission and triggers bounded execution cleanup; it
+  cannot produce a success-shaped unpersisted result.
 
-- Inbound API authentication, authorization, TLS, and network protection belong
-  to the external gateway. ahplex is not a public unprotected endpoint or
-  sandbox.
-- Host transport credentials and provider resource authentication remain
-  necessary. They are distinct from inbound access control.
-- Host adapters discover requirements; configured authentication adapters supply
-  credentials, run known login commands, or expose caller-facing interaction.
-- One active login attempt per host. Bind it to the configured provider/resource
-  and relevant connection; no global login or implicit cross-host token sharing.
-- Caller-facing link/code/input steps are not evidence of success. Verify the
-  target authentication; expire and clean up unfinished attempts.
-- Do not copy ambient editor, OS, or CLI credentials. Use only explicit
-  provisioning. Never return tokens or raw login output as status, or log
-  sensitive input.
-- API callers cannot register commands, plugin modules, endpoints, or OAuth
-  clients.
+## 5. Observe honestly; do not replay uncertain work
 
-## 5. Minimal public contract
+- Repeated identical Turn submissions return existing records without dispatch;
+  changed input with the same ID conflicts.
+- There is no atomic transaction across the store and the Agent.
+- Dispatch intent without trustworthy completion becomes `unknown` after a
+  crash/disconnection, not `error`, `complete`, or implicit resubmission.
+- Undispatched records may be terminated as explicitly not dispatched; no
+  automatic durable job scheduler.
+- A client disconnect does not cancel an accepted Turn.
+- ACP stop reason is preserved separately from the local terminal projection.
+  End of execution is not proof of successful task completion.
+- Cancel the exact bound active Turn, not "latest". A cancel notification is not
+  terminal evidence; late normal completion remains normal completion.
 
-- Expose only operations needed to select/prepare a host, authenticate, discover
-  or create Sessions/Chats, and submit/read/cancel Turns.
-- Return native resource identities at creation; omit request echoes and
-  internal metadata. Polling is sufficient; no independent job/flow management
-  API.
-- Reads do not start hosts or authentication. Read authoritative host state when
-  connected; do not silently present an unavailable catalogue as an empty list.
-- Keep error codes actionable and distinguish upstream authentication from
-  authentication to the HTTP service.
-- Minimize concepts, not correctness: ownership checks, validation, exact
-  correlation, and explicit error reporting are not optional.
+## 6. History is not restored Agent context
 
-## 6. Implementation boundary
+- Local history remains readable without backend recovery.
+- Use only negotiated resume/load support to continue a bound ACP Session.
+- Unsupported/missing backend recovery fails explicitly. Never recreate the
+  backend and replay cached prompts as silent restoration.
+- Loading replay is staged separately from live observations. Do not deduplicate
+  legitimate repeated messages by text/hash or attach replay to a new Turn.
+- Without stable backend message identity, keep replay as a separately sourced
+  snapshot instead of merging it by guesswork.
+- Backend loading alone is not proof of an interrupted Turn's outcome.
+- Uncorrelated/late background events can be Session-scoped with no Turn ID; do
+  not attach them to whichever prompt happens to be running.
 
-- Use the official `@microsoft/agent-host-protocol` SDK. Do not launch ahpc as
-  an internal server, copy its application layer, or rewrite its private source.
-- Keep one ESM TypeScript package with separate internal Host/auth adapters. New
-  host adapters must implement lifecycle ownership, not just connectivity.
-- VS Code Agent Host is the initial integration. AHPD/ACP translation may be
-  supplied by a later host adapter; ahplex does not implement ACP translation.
-- No Web UI, public plugin SDK, monorepo, project manager, or independent
-  scheduler is required for this MVP.
-- `serve` validates file/stdin config and explicit overrides before starting
-  resources. No standalone validation command is necessary.
+## 7. Authentication and interaction remain explicit
+
+- Agent credentials are operator-provisioned. Ordinary HTTP execution does not
+  require the caller to submit provider credentials.
+- Authentication adapters are Agent-specific where ACP alone is insufficient.
+- Device link/code, authenticated profile, and successful model execution are
+  distinct evidence. No hidden paid authentication probe.
+- Plaintext storage requires explicit operator consent.
+- Advertise only callback capabilities actually implemented and policy-checked.
+- Permission requests follow explicit policy; default deny, never silent
+  auto-approval. Unsupported interactive requests fail rather than hang.
+- External gateways own inbound authentication, authorization, and TLS.
+
+## 8. Make the cutover explicit
+
+- New `/v2` API and schema 2, without silent `/v1` compatibility.
+- Use the official ACP SDK; remove AHP/AHPD/VS Code runtime code at the tested
+  cutover rather than retaining unused dual-protocol abstractions.
+- Keep one ESM package and preserve its exports map/files allowlist. Public
+  exports remain in `src/index.ts`.
+- No automatic legacy configuration/history/credential import.
+- Update HTTP/OpenAPI, CLI/init, config, storage, runtime, tests, and docs
+  together before claiming ACP support.
+- Legacy live-provider verification is not evidence that the redesigned
+  persistent ACP execution path works.
