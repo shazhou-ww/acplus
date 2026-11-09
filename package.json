@@ -1,6 +1,6 @@
 {
   "name": "acplus",
-  "version": "0.1.0-canary.20261109.2",
+  "version": "0.1.0-canary.20261109.3",
   "description": "On-demand ACP Agents and durable Session history over HTTP.",
   "keywords": [
     "agent",
