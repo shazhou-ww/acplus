@@ -16,16 +16,16 @@ earlier Canaries must add `--json` for machine-readable output.
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
-release candidate is `acplus@0.1.0-canary.20261110.1` for npm `canary`; the
+verified release is `acplus@0.1.0-canary.20261110.1` on npm `canary`; the
 reserved package's `latest` placeholder is not this runtime.
 
-The previous Canary's registry, provenance and installed CLI/import/init checks
-passed in
-[GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42647333420).
+This Canary's registry, provenance and installed CLI/import/init checks passed
+in
+[GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42653599591).
 The prior `.3` version's independent Ubuntu lifecycle and real Copilot
 acceptance passed; see the
 [deployment evidence](.silvermoon/ideas/01M6ZY4YA4AQSDGPR58KXG3B9Z/outer/Verification.md).
-After release verification, install the CLI usability Canary:
+Install the CLI usability Canary:
 
 ```powershell
 npm install --global acplus@0.1.0-canary.20261110.1
