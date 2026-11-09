@@ -27,6 +27,12 @@ describe("acplus publishing contract", () => {
     expect(workflow).toContain("`acplus@${version}`");
     expect(workflow).toContain("generated.schemaVersion, 2");
     expect(workflow).toContain("args.filter(arg => arg !== '--json')");
+    expect(workflow).toContain(
+      "explicitAgent ? ['--agent', 'fixture-agent'] : []",
+    );
+    expect(workflow).toContain(
+      "generated.agents[0].id, explicitAgent ? 'fixture-agent' : 'copilot'",
+    );
     for (const legacy of [
       "@ahpd",
       "--runtime-root",

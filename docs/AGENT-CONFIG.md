@@ -6,15 +6,23 @@ credential/configuration migration is supported.
 
 Configuration files use YAML. `acplus init` defaults to `~/.acplus/acplus.yaml`,
 creating the default parent directory privately. The default data directory is
-`~/.acplus/state` and default Copilot profile is `~/.acplus/copilot-profile`,
-independently of a `--data-dir` override. `acplus serve` reads that fixed config
-path when `--config` is omitted. It does not search the working directory or
-migrate old files. On Windows, `~` means the home directory returned by Node's
+`~/.acplus/state` and default Agent profile is `~/.acplus/<ID>-profile`
+(`~/.acplus/copilot-profile` for `--agent copilot`), independently of a
+`--data-dir` override. `acplus serve` reads that fixed config path when
+`--config` is omitted. It does not search the working directory or migrate old
+files. On Windows, `~` means the home directory returned by Node's
 `os.homedir()`. Explicit relative CLI paths resolve from the invoking directory;
 custom config parents must already exist. `--config -` reads one YAML document
 from stdin. JSON syntax is accepted as a YAML subset, but `init` always writes
 YAML. Duplicate keys, multiple documents, unknown tags and excessive aliases are
 rejected. HTTP request and response formats remain JSON.
+
+Initialize with `acplus init --agent ID --agent-command PATH`. `--agent` is
+required; the ID is never inferred from the executable, and the initial label
+uses the same value. IDs follow `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. Use the
+configured ID for Session creation and Agent commands. `--profile` overrides the
+default independently. Existing IDs/profile paths are unchanged and existing
+configs cannot be overwritten by `init`.
 
 Each Agent uses an explicit native executable and argument array, dedicated
 profile and optional configured MCP servers. Work directories are chosen per

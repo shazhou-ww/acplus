@@ -921,6 +921,8 @@ describe("acplus CLI", () => {
     const file = join(directory, "config.yaml");
     await run([
       "init",
+      "--agent",
+      "copilot",
       "--agent-command",
       process.execPath,
       "--config",
@@ -938,14 +940,30 @@ describe("acplus CLI", () => {
     expect(await readFile(file, "utf8")).not.toContain("workspaces:");
     expect(config).toMatchObject({
       schemaVersion: 2,
-      agents: [{ authentication: { loginAccount: "wewei" } }],
+      agents: [
+        {
+          id: "copilot",
+          label: "copilot",
+          authentication: { loginAccount: "wewei" },
+        },
+      ],
     });
     await expect(
-      run(["init", "--agent-command", process.execPath, "--config", file]),
+      run([
+        "init",
+        "--agent",
+        "copilot",
+        "--agent-command",
+        process.execPath,
+        "--config",
+        file,
+      ]),
     ).rejects.toThrow(ConfigurationError);
     await expect(
       run([
         "init",
+        "--agent",
+        "copilot",
         "--agent-command",
         join(directory, "missing"),
         "--config",
@@ -960,6 +978,8 @@ describe("acplus CLI", () => {
     await expect(
       run([
         "init",
+        "--agent",
+        "copilot",
         "--agent-command",
         process.execPath,
         "--workspace",
@@ -971,12 +991,91 @@ describe("acplus CLI", () => {
     await expect(access(file)).rejects.toMatchObject({ code: "ENOENT" });
     expect(mocks.start).not.toHaveBeenCalled();
   });
+  it("uses the supplied Agent ID and label rather than inferring them from the executable", async () => {
+    const directory = await root();
+    mocks.home.mockReturnValue(directory);
+    await run([
+      "init",
+      "--agent",
+      "review_agent-2",
+      "--agent-command",
+      process.execPath,
+      "--json",
+    ]);
+    const file = join(directory, ".acplus", "acplus.yaml");
+    const config: unknown = parse(await readFile(file, "utf8"));
+    expect(config).toMatchObject({
+      agents: [
+        {
+          id: "review_agent-2",
+          label: "review_agent-2",
+          command: process.execPath,
+          profileDir: join(directory, ".acplus", "review_agent-2-profile"),
+        },
+      ],
+    });
+    expect(console.log).toHaveBeenLastCalledWith(
+      JSON.stringify({ config: file }),
+    );
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.local).not.toHaveBeenCalled();
+  });
+  it("rejects missing, invalid or repeated Agent IDs without creating configuration", async () => {
+    const directory = await root();
+    mocks.home.mockReturnValue(directory);
+    const file = join(directory, "config.yaml");
+    await expect(
+      run(["init", "--agent-command", process.execPath, "--config", file]),
+    ).rejects.toThrow("Required options: agent, agent-command");
+    await expect(
+      run([
+        "init",
+        "--agent",
+        "copilot",
+        "--agent",
+        "other",
+        "--agent-command",
+        process.execPath,
+        "--config",
+        file,
+      ]),
+    ).rejects.toThrow(ConfigurationError);
+    for (const id of [
+      "",
+      "../profile",
+      "-invalid",
+      "agent with spaces",
+      "x".repeat(65),
+    ])
+      await expect(
+        run([
+          "init",
+          "--agent",
+          id,
+          "--agent-command",
+          process.execPath,
+          "--config",
+          file,
+        ]),
+      ).rejects.toThrow(ConfigurationError);
+    await expect(access(file)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(directory, ".acplus"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
   it("initializes YAML under the user home and serves it without --config", async () => {
     const directory = await root();
     mocks.home.mockReturnValue(directory);
     const home = join(directory, ".acplus");
     const file = join(home, "acplus.yaml");
-    await run(["init", "--agent-command", process.execPath]);
+    await run([
+      "init",
+      "--agent",
+      "copilot",
+      "--agent-command",
+      process.execPath,
+    ]);
     const raw = await readFile(file, "utf8");
     expect(raw).toContain("schemaVersion: 2");
     expect(raw).not.toMatch(/^\{/u);
@@ -996,7 +1095,7 @@ describe("acplus CLI", () => {
       expect((await stat(file)).mode & 0o777).toBe(0o600);
     }
     await expect(
-      run(["init", "--agent-command", process.execPath]),
+      run(["init", "--agent", "copilot", "--agent-command", process.execPath]),
     ).rejects.toThrow(ConfigurationError);
     vi.spyOn(process, "once").mockImplementation(() => process);
     await run(["serve"]);
@@ -1024,6 +1123,8 @@ describe("acplus CLI", () => {
     await expect(
       run([
         "init",
+        "--agent",
+        "copilot",
         "--agent-command",
         process.execPath,
         "--config",
@@ -1038,6 +1139,8 @@ describe("acplus CLI", () => {
     const profileDir = join(directory, "chosen-profile");
     await run([
       "init",
+      "--agent",
+      "copilot",
       "--agent-command",
       process.execPath,
       "--data-dir",

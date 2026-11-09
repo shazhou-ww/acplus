@@ -106,6 +106,7 @@ describe("human CLI output and focused help", () => {
     expect(helpFor(["sessions", "send"])).toContain("Ctrl+C stops waiting");
     expect(helpFor(["sessions", "delete"])).toContain("Active or ambiguous");
     expect(helpFor(["init"])).not.toContain("--url");
+    expect(helpFor(["init"])).toContain("init --agent ID --agent-command PATH");
     expect(helpFor(["serve"])).toContain("persistent");
     expect(() => helpFor(["bad"])).toThrow("Unknown command");
     expect(() => helpFor(["sessions", "bad"])).toThrow("Unknown command");

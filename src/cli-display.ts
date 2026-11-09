@@ -3,9 +3,9 @@ import { ConfigurationError, record } from "./acp-common.js";
 const commands: Record<string, { usage: string; description: string }> = {
   init: {
     usage:
-      "init --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]",
+      "init --agent ID --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]",
     description:
-      "Create a private configuration. Choose a working directory when creating each Session.",
+      "Create a private configuration for the explicit Agent ID (1..64 letters/digits/underscore/hyphen, starting with a letter or digit). ID and label use the supplied value, never the executable name. Default profile: ~/.acplus/ID-profile. Choose a working directory when creating each Session.",
   },
   serve: {
     usage:

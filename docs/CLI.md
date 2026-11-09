@@ -9,7 +9,7 @@ compatibility.
 acplus --help
 acplus --version
 acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
-acplus init --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
+acplus init --agent ID --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
 acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
@@ -138,9 +138,13 @@ supported SDK/API facade; use explicit `serve` for ordinary HTTP/auth clients.
 `init` exclusively writes YAML (0600 on Linux), defaulting to
 `~/.acplus/acplus.yaml`. It creates only the default parent `~/.acplus` (0700 on
 Linux); explicit custom parents must exist. Data defaults to `~/.acplus/state`
-and the Copilot profile to `~/.acplus/copilot-profile`. All three explicit flags
-override their defaults independently. `init` does not select a workspace: each
-Session supplies an existing absolute `--working-directory` at creation.
+and the Agent profile to `~/.acplus/<ID>-profile` (`copilot-profile` for ID
+`copilot`). The Agent ID is required, not inferred or defaulted; it becomes the
+generated `id` and initial `label`. IDs are 1..64 ASCII letters, digits,
+underscores or hyphens, starting with a letter or digit. Existing configs are
+not renamed; use their existing IDs when creating Sessions. All three explicit
+flags override their defaults independently. `init` does not select a workspace:
+each Session supplies an existing absolute `--working-directory` at creation.
 `--workspace` is not accepted. `serve` without `--config` reads the fixed home
 path; it never scans the current directory or migrates an old config.
 `--config -` reads YAML from stdin. It does not install software, launch an
@@ -149,7 +153,7 @@ existing executable, and select a private data root/profile outside future
 Session work directories. Existing files and symlinks are not overwritten.
 
 ```bash
-acplus init --agent-command "$(command -v copilot)" \
+acplus init --agent copilot --agent-command "$(command -v copilot)" \
   --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
   --config /srv/acplus/config.yaml --port 4280

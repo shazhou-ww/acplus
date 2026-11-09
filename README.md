@@ -3,8 +3,10 @@
 The npm package, CLI command and GitHub repository are named `acplus`. Client
 configuration uses `ACPLUS_URL`; the default YAML config is
 `~/.acplus/acplus.yaml`, with data in `~/.acplus/state` and the default Copilot
-profile in `~/.acplus/copilot-profile`. There is no old command/environment
-alias. Historical Silvermoon records and Git commits remain unchanged.
+profile in `~/.acplus/copilot-profile` when initialized with `--agent copilot`.
+Other IDs default to `~/.acplus/<agent-id>-profile`. There is no old
+command/environment alias. Historical Silvermoon records and Git commits remain
+unchanged.
 
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
@@ -105,7 +107,7 @@ Choose an existing trusted workspace, a private configuration parent and
 separate data/profile directories outside that workspace:
 
 ```bash
-acplus init --agent-command "$(command -v copilot)" \
+acplus init --agent copilot --agent-command "$(command -v copilot)" \
   --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
   --config /srv/acplus/config.yaml --port 4280
@@ -122,7 +124,7 @@ profile.
 Omit `--config`, `--data-dir` and `--profile` to use the home defaults above:
 
 ```bash
-acplus init --agent-command "$(command -v copilot)" \
+acplus init --agent copilot --agent-command "$(command -v copilot)" \
   --login-account YOUR-LOGIN
 acplus serve
 ```
@@ -139,6 +141,12 @@ accept `--workspace`; choose an existing absolute `--working-directory` for each
 `sessions create`. There is no global directory allowlist. For configs created
 by earlier Canaries, remove `agents[].workspaces` before upgrading: the obsolete
 field is rejected, not silently ignored.
+
+`init` requires `--agent ID`; it writes that exact ID and uses it as the initial
+label, rather than inferring an Agent from the executable path. The default
+profile is `~/.acplus/<ID>-profile`; `--profile` overrides it. Use the same ID
+in `sessions create --agent ID`. Existing configuration IDs and profiles are not
+renamed or migrated; `init` still refuses to overwrite an existing config.
 
 The HTTP listener defaults to loopback. `--port 0` chooses an ephemeral port;
 use the URL printed by `serve`. The data root has one owner. Canonical profile

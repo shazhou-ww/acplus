@@ -180,6 +180,7 @@ export async function run(args: string[]): Promise<void> {
     const opts = options(
       args.slice(1),
       [
+        "agent",
         "agent-command",
         "config",
         "profile",
@@ -188,12 +189,13 @@ export async function run(args: string[]): Promise<void> {
         "port",
         "json",
       ],
-      ["agent-command"],
+      ["agent", "agent-command"],
     );
     const home = join(homedir(), ".acplus");
     const file = resolve(opts.config ?? join(home, "acplus.yaml"));
     const directory = resolve(opts["data-dir"] ?? join(home, "state"));
     const executable = opts["agent-command"] ?? "";
+    const agentId = opts.agent ?? "";
     try {
       if (!(await stat(executable)).isFile())
         throw new ConfigurationError("Agent executable must exist");
@@ -208,10 +210,12 @@ export async function run(args: string[]): Promise<void> {
         listen: { host: "127.0.0.1", port: Number(opts.port ?? 4280) },
         agents: [
           {
-            id: "copilot",
-            label: "Copilot CLI",
+            id: agentId,
+            label: agentId,
             command: executable,
-            profileDir: resolve(opts.profile ?? join(home, "copilot-profile")),
+            profileDir: resolve(
+              opts.profile ?? join(home, `${agentId}-profile`),
+            ),
             ...(opts["login-account"] === undefined
               ? {}
               : {
