@@ -74,6 +74,14 @@ required. Earlier unshipped schema-1 development databases are rejected.
 
 ## Configuration and ownership
 
+Operator configuration uses YAML. CLI defaults are `~/.acplus/acplus.yaml`,
+`~/.acplus/state` and `~/.acplus/copilot-profile`. `init` privately creates only
+the default configuration parent and never overwrites a file; explicit custom
+parents must exist. `serve` uses the fixed home config when `--config` is
+absent; it does not discover cwd configs or migrate prior files. Explicit
+config/data/profile flags override independently. File-relative configuration
+paths keep their existing semantics. HTTP request/response payloads remain JSON.
+
 Introduce `schemaVersion: 2`, explicitly rejecting legacy schema 1 in the new
 runtime. Keep the HTTP listener, service identity, private data root, and
 single-owner lock. Replace `hosts` with a static `agents` registry.

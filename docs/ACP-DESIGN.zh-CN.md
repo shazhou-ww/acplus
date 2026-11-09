@@ -62,6 +62,12 @@ Agent 必须分别完成初始化、认证、工具权限策略和重启测试�
 
 ## 配置与进程归属
 
+运维配置使用 YAML。CLI 默认配置为 `~/.acplus/acplus.yaml`，数据为
+`~/.acplus/state`，Copilot profile 为 `~/.acplus/copilot-profile`。 `init`
+只自动创建默认配置父目录，权限受限且不覆盖已有文件；显式指定的其他父目录必须已存在。
+`serve` 未指定 `--config`
+时读取固定用户路径，不扫描当前目录或迁移旧文件。配置、数据及 profile 的显式参数分别优先；配置内相对路径仍以配置目录为基准。HTTP 请求与响应仍使用 JSON。
+
 引入 `schemaVersion: 2`，新运行时明确拒绝旧版 schema
 1。保留 HTTP 监听配置、服务实例标识、私有数据根目录和单一所有者锁；将 `hosts`
 替换为静态 `agents` 注册表。

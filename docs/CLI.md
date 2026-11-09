@@ -7,7 +7,7 @@ stable ACP wire v1. No legacy `hosts`, `chats`, or `/v1` compatibility.
 ```text
 acplus --help
 acplus --version
-acplus serve --config FILE [--port N --listen-host ADDRESS --data-dir PATH]
+acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
 acplus init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
@@ -23,18 +23,23 @@ URL. Exit codes: 0 for successful HTTP interactions, 1 for operation/HTTP
 errors, 2 for invalid CLI/config input. Reading an `error` or `unknown` Turn is
 still a successful observation, not a command-level execution success.
 
-`init` exclusively creates a new config file (0600 on Linux) in an existing
-parent directory. It does not install software, launch an Agent, log in, query a
-credential store, or send a paid probe. Provide an existing executable and
-workspace, and select a private data root/profile outside the workspace.
-Existing files and symlinks are not overwritten.
+`init` exclusively writes YAML (0600 on Linux), defaulting to
+`~/.acplus/acplus.yaml`. It creates only the default parent `~/.acplus` (0700 on
+Linux); explicit custom parents must exist. Data defaults to `~/.acplus/state`
+and the Copilot profile to `~/.acplus/copilot-profile`. All three explicit flags
+override their defaults independently. `serve` without `--config` reads the
+fixed home path; it never scans the current directory or migrates an old config.
+`--config -` reads YAML from stdin. It does not install software, launch an
+Agent, log in, query a credential store, or send a paid probe. Provide an
+existing executable and workspace, and select a private data root/profile
+outside the workspace. Existing files and symlinks are not overwritten.
 
 ```bash
 acplus init --agent-command "$(command -v copilot)" \
   --workspace /srv/work/project --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
-  --config /srv/acplus/config.json --port 4280
-acplus serve --config /srv/acplus/config.json
+  --config /srv/acplus/config.yaml --port 4280
+acplus serve --config /srv/acplus/config.yaml
 ```
 
 Provision only when needed:

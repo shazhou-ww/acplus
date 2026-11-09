@@ -247,12 +247,17 @@ jobs:
           const workspace = join(fixture, 'workspace');
           const data = join(fixture, 'state');
           mkdirSync(workspace, { recursive: true });
-          const initConfig = join(fixture, 'acplus.json');
+          const initConfig = join(fixture, 'acplus.yaml');
           const args = ['init', '--agent-command', process.execPath, '--workspace', workspace, '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
           const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
           assert.deepEqual(result, { config: initConfig });
           const original = readFileSync(initConfig);
-          const generated = JSON.parse(original);
+          const generated = JSON.parse(execFileSync(process.execPath, [
+            '--input-type=module', '--eval',
+            `import { loadConfig } from 'acplus';
+             console.log(JSON.stringify(await loadConfig(process.argv[1])));`,
+            initConfig,
+          ], { cwd: directory, encoding: 'utf8' }));
           assert.equal(statSync(initConfig).mode & 0o777, 0o600);
           assert.equal(existsSync(data), false, 'init must not create data or profile directories');
           assert.equal(generated.schemaVersion, 2);
@@ -284,10 +289,9 @@ jobs:
           execFileSync(process.execPath, [
             '--input-type=module', '--eval',
             `import assert from 'node:assert/strict';
-             import { readFileSync } from 'node:fs';
              import * as api from 'acplus';
              for (const name of ['start', 'loadConfig', 'validateConfig', 'ConfigurationError', 'ServiceError']) assert.equal(typeof api[name], 'function');
-             if (process.argv[1]) api.validateConfig(JSON.parse(readFileSync(process.argv[1], 'utf8')));`,
+             if (process.argv[1]) api.validateConfig(await api.loadConfig(process.argv[1]));`,
             initConfig,
           ], { cwd: directory, stdio: 'inherit' });
           console.log(JSON.stringify({ name: metadata.name, version, distTag, tags: metadata['dist-tags'], bin: metadata.bin, provenance: metadata.dist.attestations.url, cliSmoke: 'passed', importSmoke: 'passed', initSmoke: 'passed' }));

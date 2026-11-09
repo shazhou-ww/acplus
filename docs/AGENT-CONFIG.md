@@ -4,35 +4,43 @@ Use configuration `schemaVersion: 2`. No legacy `hosts` registry, AHPD runtime,
 VS Code launcher, attach mode, arbitrary HTTP command registration, or automatic
 credential/configuration migration is supported.
 
+Configuration files use YAML. `acplus init` defaults to `~/.acplus/acplus.yaml`,
+creating the default parent directory privately. The default data directory is
+`~/.acplus/state` and default Copilot profile is `~/.acplus/copilot-profile`,
+independently of a `--data-dir` override. `acplus serve` reads that fixed config
+path when `--config` is omitted. It does not search the working directory or
+migrate old files. On Windows, `~` means the home directory returned by Node's
+`os.homedir()`. Explicit relative CLI paths resolve from the invoking directory;
+custom config parents must already exist. `--config -` reads one YAML document
+from stdin. JSON syntax is accepted as a YAML subset, but `init` always writes
+YAML. Duplicate keys, multiple documents, unknown tags and excessive aliases are
+rejected. HTTP request and response formats remain JSON.
+
 Each Agent uses an explicit native executable and argument array, dedicated
 profile, allowed workspace roots, and optional configured MCP servers. Relative
 data/profile/workspace/secret-file paths resolve from the config file; stdin
 configuration resolves from the invoking directory. Executables must be absolute
 native paths, not `.cmd`/`.bat` shims.
 
-```json
-{
-  "schemaVersion": 2,
-  "instance": "local",
-  "dataDir": "/srv/acplus/state",
-  "listen": { "host": "127.0.0.1", "port": 4280 },
-  "agents": [
-    {
-      "id": "copilot",
-      "label": "Copilot CLI",
-      "command": "/usr/local/bin/copilot",
-      "args": ["--acp"],
-      "profileDir": "/srv/acplus/credentials/copilot",
-      "workspaces": ["/srv/work/project"],
-      "permission": "deny",
-      "idleTimeoutMs": 0,
-      "authentication": {
-        "type": "copilot",
-        "loginAccount": "YOUR-LOGIN"
-      }
-    }
-  ]
-}
+```yaml
+schemaVersion: 2
+instance: local
+dataDir: ./state
+listen:
+  host: 127.0.0.1
+  port: 4280
+agents:
+  - id: copilot
+    label: Copilot CLI
+    command: /usr/local/bin/copilot
+    args: ["--acp"]
+    profileDir: ./copilot-profile
+    workspaces: ["/srv/work/project"]
+    permission: deny
+    idleTimeoutMs: 0
+    authentication:
+      type: copilot
+      loginAccount: YOUR-LOGIN
 ```
 
 Replace the executable, existing workspace and expected account explicitly.
@@ -64,13 +72,14 @@ an old HTTP/CLI compatibility layer.
 
 Credentials remain in Agent profiles/stores or explicit references:
 
-```json
-{
-  "env": {
-    "PROVIDER_API_KEY": { "source": "env", "name": "MY_PROVIDER_API_KEY" },
-    "OTHER_API_KEY": { "source": "file", "path": "/private/provider-key" }
-  }
-}
+```yaml
+env:
+  PROVIDER_API_KEY:
+    source: env
+    name: MY_PROVIDER_API_KEY
+  OTHER_API_KEY:
+    source: file
+    path: /private/provider-key
 ```
 
 References are resolved only from the specified source; missing credentials fail

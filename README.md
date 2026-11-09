@@ -1,9 +1,10 @@
 # acplus
 
 The npm package, CLI command and GitHub repository are named `acplus`. Client
-configuration uses `ACPLUS_URL`; default files are `acplus.json` and `.acplus`.
-There is no old command/environment alias. Historical Silvermoon records and Git
-commits remain unchanged.
+configuration uses `ACPLUS_URL`; the default YAML config is
+`~/.acplus/acplus.yaml`, with data in `~/.acplus/state` and the default Copilot
+profile in `~/.acplus/copilot-profile`. There is no old command/environment
+alias. Historical Silvermoon records and Git commits remain unchanged.
 
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
@@ -96,8 +97,8 @@ separate data/profile directories outside that workspace:
 acplus init --agent-command "$(command -v copilot)" \
   --workspace /srv/work/project --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
-  --config /srv/acplus/config.json --port 4280
-acplus serve --config /srv/acplus/config.json
+  --config /srv/acplus/config.yaml --port 4280
+acplus serve --config /srv/acplus/config.yaml
 ```
 
 For an uninstalled checkout, replace `acplus` with
@@ -105,6 +106,20 @@ For an uninstalled checkout, replace `acplus` with
 explicitly. `init` checks paths and exclusively creates a new schema-2 config
 (0600 on Linux); it does not install, start, authenticate or probe an Agent. It
 never overwrites an existing file/symlink or copies another profile.
+
+Omit `--config`, `--data-dir` and `--profile` to use the home defaults above:
+
+```bash
+acplus init --agent-command "$(command -v copilot)" \
+  --workspace /srv/work/project --login-account YOUR-LOGIN
+acplus serve
+```
+
+`init` creates the default `~/.acplus` parent directory privately; explicit
+custom parents must already exist. `serve` never scans the current directory and
+reports a missing default config rather than creating one or falling back.
+`--config -` reads YAML from stdin. Explicit paths remain authoritative; no old
+configuration is migrated. HTTP payloads and client output remain JSON.
 
 The HTTP listener defaults to loopback. `--port 0` chooses an ephemeral port;
 use the URL printed by `serve`. The data root has one owner. Canonical profile

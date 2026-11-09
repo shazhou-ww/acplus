@@ -1,21 +1,36 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type * as Os from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse, stringify } from "yaml";
 import { ConfigurationError, ServiceError } from "../src/acp-common.js";
 import { run } from "../src/acp-cli.js";
 import { fixtureConfig } from "./acp-fixture.js";
 
 const mocks = vi.hoisted(() => ({
+  home: vi.fn<() => string>(),
   close: vi.fn<() => Promise<void>>(),
   start:
     vi.fn<
       (config: unknown) => Promise<{ url: string; close(): Promise<void> }>
     >(),
 }));
+vi.mock("node:os", async (original) => {
+  const actual = await original<typeof Os>();
+  return { ...actual, homedir: mocks.home };
+});
 vi.mock("../src/acp-server.js", () => ({ start: mocks.start }));
 const roots: string[] = [];
 beforeEach(() => {
+  mocks.home.mockReturnValue(tmpdir());
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(globalThis, "fetch").mockImplementation(() =>
@@ -266,7 +281,7 @@ describe("ACP CLI", () => {
   });
   it("creates exclusive configuration without installing or launching", async () => {
     const directory = await root();
-    const file = join(directory, "config.json");
+    const file = join(directory, "config.yaml");
     await run([
       "init",
       "--agent-command",
@@ -284,7 +299,7 @@ describe("ACP CLI", () => {
       "--port",
       "0",
     ]);
-    const config: unknown = JSON.parse(await readFile(file, "utf8"));
+    const config: unknown = parse(await readFile(file, "utf8"));
     expect(config).toMatchObject({
       schemaVersion: 2,
       agents: [{ authentication: { loginAccount: "wewei" } }],
@@ -312,6 +327,110 @@ describe("ACP CLI", () => {
       ]),
     ).rejects.toThrow(ConfigurationError);
     expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("initializes YAML under the user home and serves it without --config", async () => {
+    const directory = await root();
+    mocks.home.mockReturnValue(directory);
+    const home = join(directory, ".acplus");
+    const file = join(home, "acplus.yaml");
+    await run([
+      "init",
+      "--agent-command",
+      process.execPath,
+      "--workspace",
+      directory,
+    ]);
+    const raw = await readFile(file, "utf8");
+    expect(raw).toContain("schemaVersion: 2");
+    expect(raw).not.toMatch(/^\{/u);
+    const config: unknown = parse(raw);
+    expect(config).toMatchObject({
+      dataDir: join(home, "state"),
+      agents: [{ profileDir: join(home, "copilot-profile") }],
+    });
+    await expect(access(join(home, "state"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(join(home, "copilot-profile"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    if (process.platform !== "win32") {
+      expect((await stat(home)).mode & 0o777).toBe(0o700);
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+    }
+    await expect(
+      run([
+        "init",
+        "--agent-command",
+        process.execPath,
+        "--workspace",
+        directory,
+      ]),
+    ).rejects.toThrow(ConfigurationError);
+    vi.spyOn(process, "once").mockImplementation(() => process);
+    await run(["serve"]);
+    expect(mocks.start).toHaveBeenCalledWith(config);
+  });
+  it("does not scan the working directory or create a home config while serving", async () => {
+    const directory = await root();
+    mocks.home.mockReturnValue(directory);
+    await expect(run(["serve"])).rejects.toThrow(
+      "Cannot read a valid YAML configuration",
+    );
+    expect(mocks.start).not.toHaveBeenCalled();
+    await expect(access(join(directory, ".acplus"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const configFile = join(directory, "custom.yaml");
+    const config = fixtureConfig(directory);
+    await writeFile(configFile, stringify(config));
+    vi.spyOn(process, "once").mockImplementation(() => process);
+    await run(["serve", "--config", configFile]);
+    expect(mocks.start).toHaveBeenCalledWith(config);
+    await expect(access(join(directory, ".acplus"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      run([
+        "init",
+        "--agent-command",
+        process.execPath,
+        "--workspace",
+        directory,
+        "--config",
+        join(directory, "missing", "custom.yaml"),
+      ]),
+    ).rejects.toThrow(ConfigurationError);
+  });
+  it("keeps explicit data/profile overrides and reads YAML config from stdin", async () => {
+    const directory = await root();
+    mocks.home.mockReturnValue(directory);
+    const dataDir = join(directory, "chosen-state");
+    const profileDir = join(directory, "chosen-profile");
+    await run([
+      "init",
+      "--agent-command",
+      process.execPath,
+      "--workspace",
+      directory,
+      "--data-dir",
+      dataDir,
+      "--profile",
+      profileDir,
+    ]);
+    const config: unknown = parse(
+      await readFile(join(directory, ".acplus", "acplus.yaml"), "utf8"),
+    );
+    expect(config).toMatchObject({ dataDir, agents: [{ profileDir }] });
+    vi.spyOn(process.stdin, Symbol.asyncIterator).mockImplementation(
+      async function* () {
+        yield await Promise.resolve(Buffer.from(stringify(config)));
+        return undefined;
+      },
+    );
+    vi.spyOn(process, "once").mockImplementation(() => process);
+    await run(["serve", "--config", "-"]);
+    expect(mocks.start).toHaveBeenCalledWith(config);
   });
   it("starts only the explicit service and handles its shutdown once", async () => {
     const directory = await root();

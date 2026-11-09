@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { parseDocument } from "yaml";
 import { ConfigurationError } from "./acp-common.js";
 import type { Config } from "./acp-types.js";
 export type { AgentConfig, Config, SecretReference } from "./acp-types.js";
@@ -155,11 +156,14 @@ export async function loadConfig(
 ): Promise<Config> {
   let raw: unknown;
   try {
-    raw = JSON.parse(
+    const document = parseDocument(
       file === "-" ? (stdin ?? "") : await readFile(file, "utf8"),
     );
+    if (document.errors.length > 0 || document.warnings.length > 0)
+      throw new ConfigurationError("Invalid YAML document");
+    raw = document.toJS({ maxAliasCount: 100 });
   } catch {
-    throw new ConfigurationError("Cannot read a valid JSON configuration");
+    throw new ConfigurationError("Cannot read a valid YAML configuration");
   }
   return validateConfig(
     raw,

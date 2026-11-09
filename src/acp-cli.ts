@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-import { readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stringify } from "yaml";
 import { ConfigurationError, record, ServiceError } from "./acp-common.js";
 import { loadConfig, validateConfig } from "./acp-config.js";
 
 const help = `acplus - on-demand Agents and durable Session history
 
 Usage:
-  acplus serve --config FILE [--port N --listen-host ADDRESS --data-dir PATH]
+  acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
   acplus init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
   acplus health --url BASE/v2
   acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
@@ -17,6 +19,7 @@ Usage:
   acplus events list --session UUID [--turn UUID --after N --limit N]
 
 Client commands require --url BASE/v2 or ACPLUS_URL. Output is JSON.
+Default YAML config: ~/.acplus/acplus.yaml; data: ~/.acplus/state.
 All reads and Session creation are local. Login is explicit, not a paid probe.
 Login returns a flow; use agents auth to inspect public link/code and input steps.
 `;
@@ -79,12 +82,13 @@ export async function run(args: string[]): Promise<void> {
   const command = args[0];
   if (command === "serve") {
     const { start } = await import("./acp-server.js");
-    const opts = options(
-      args.slice(1),
-      ["config", "port", "listen-host", "data-dir"],
-      ["config"],
-    );
-    const file = opts.config ?? "";
+    const opts = options(args.slice(1), [
+      "config",
+      "port",
+      "listen-host",
+      "data-dir",
+    ]);
+    const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
     const config = await loadConfig(
       file,
       file === "-" ? await input("-") : undefined,
@@ -130,8 +134,9 @@ export async function run(args: string[]): Promise<void> {
       ],
       ["agent-command", "workspace"],
     );
-    const file = resolve(opts.config ?? "acplus.json");
-    const directory = resolve(opts["data-dir"] ?? ".acplus");
+    const home = join(homedir(), ".acplus");
+    const file = resolve(opts.config ?? join(home, "acplus.yaml"));
+    const directory = resolve(opts["data-dir"] ?? join(home, "state"));
     const workspace = resolve(opts.workspace ?? "");
     const executable = opts["agent-command"] ?? "";
     try {
@@ -154,9 +159,7 @@ export async function run(args: string[]): Promise<void> {
             id: "copilot",
             label: "Copilot CLI",
             command: executable,
-            profileDir: resolve(
-              opts.profile ?? resolve(directory, "copilot-profile"),
-            ),
+            profileDir: resolve(opts.profile ?? join(home, "copilot-profile")),
             workspaces: [workspace],
             ...(opts["login-account"] === undefined
               ? {}
@@ -172,7 +175,9 @@ export async function run(args: string[]): Promise<void> {
       dirname(file),
     );
     try {
-      await writeFile(file, JSON.stringify(config, null, 2) + "\n", {
+      if (opts.config === undefined)
+        await mkdir(home, { recursive: true, mode: 0o700 });
+      await writeFile(file, stringify(config), {
         flag: "wx",
         mode: 0o600,
       });

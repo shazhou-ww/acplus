@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import {
   ConfigurationError,
   diagnostic,
@@ -82,10 +83,27 @@ describe("ACP configuration and safe helpers", () => {
     await writeFile(file, JSON.stringify(config));
     expect(await loadConfig(file)).toEqual(config);
     expect(await loadConfig("-", JSON.stringify(config))).toEqual(config);
+    const yamlFile = join(root, "config.yaml");
+    await writeFile(yamlFile, "# Operator config\n" + stringify(config));
+    expect(await loadConfig(yamlFile)).toEqual(config);
+    expect(await loadConfig("-", stringify(config))).toEqual(config);
     await expect(loadConfig("-", "{bad")).rejects.toThrow(ConfigurationError);
     await expect(loadConfig(join(root, "missing"))).rejects.toThrow(
       ConfigurationError,
     );
+  });
+  it("rejects duplicate keys, multiple documents and unknown YAML tags", async () => {
+    for (const content of [
+      "schemaVersion: 2\nschemaVersion: 1\n",
+      "---\nschemaVersion: 2\n---\nschemaVersion: 2\n",
+      "schemaVersion: !execute 2\n",
+      "schemaVersion: *missing\n",
+      "",
+      "null",
+    ])
+      await expect(loadConfig("-", content)).rejects.toThrow(
+        ConfigurationError,
+      );
   });
   it("checks real workspace boundaries and proper IDs without spawning", async () => {
     const root = await directory();
