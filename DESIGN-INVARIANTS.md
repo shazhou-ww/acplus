@@ -36,8 +36,9 @@ after independent-entry verification; published packages are unchanged.
 - Require ACP initialization and capability negotiation before Session use.
 - Use explicitly selected dedicated profiles; no ambient credential discovery or
   copying, and no shared profile across active runtimes.
-- Enforce canonical workspace roots and configured callback permission policy.
-  Neither process/profile separation nor tool policy is an OS sandbox.
+- Validate each Session's existing absolute working directory and canonicalize
+  it; no Agent-level workspace allowlist. Enforce configured callback permission
+  policy. Neither process/profile separation nor tool policy is an OS sandbox.
 - Initially serialize prompts per Agent and Session; reject busy input rather
   than queueing it or inventing generic ACP concurrency support.
 - Idle means no pending execution/load/auth/callback or known background work.

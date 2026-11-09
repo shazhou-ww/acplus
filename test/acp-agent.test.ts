@@ -100,7 +100,6 @@ async function fixture(mode = "", extra: Partial<AgentConfig> = {}) {
     args: ["--input-type=module", "-e", program],
     env: { MODE: mode },
     profileDir: directory,
-    workspaces: [process.cwd()],
     mcpServers: [],
     startupTimeoutMs: 10_000,
     idleTimeoutMs: 40,

@@ -101,7 +101,7 @@ separate data/profile directories outside that workspace:
 
 ```bash
 acplus init --agent-command "$(command -v copilot)" \
-  --workspace /srv/work/project --data-dir /srv/acplus/state \
+  --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
   --config /srv/acplus/config.yaml --port 4280
 acplus serve --config /srv/acplus/config.yaml
@@ -109,15 +109,16 @@ acplus serve --config /srv/acplus/config.yaml
 
 For an uninstalled checkout, replace `acplus` with
 `node /absolute/checkout/dist/cli.js`. Replace paths and `YOUR-LOGIN`
-explicitly. `init` checks paths and exclusively creates a new schema-2 config
-(0600 on Linux); it does not install, start, authenticate or probe an Agent. It
-never overwrites an existing file/symlink or copies another profile.
+explicitly. `init` checks the executable path and exclusively creates a new
+schema-2 config (0600 on Linux); it does not install, start, authenticate or
+probe an Agent. It never overwrites an existing file/symlink or copies another
+profile.
 
 Omit `--config`, `--data-dir` and `--profile` to use the home defaults above:
 
 ```bash
 acplus init --agent-command "$(command -v copilot)" \
-  --workspace /srv/work/project --login-account YOUR-LOGIN
+  --login-account YOUR-LOGIN
 acplus serve
 ```
 
@@ -126,6 +127,12 @@ custom parents must already exist. `serve` never scans the current directory and
 reports a missing default config rather than creating one or falling back.
 `--config -` reads YAML from stdin. Explicit paths remain authoritative; no old
 configuration is migrated. HTTP payloads and client output remain JSON.
+
+Work directories belong to Sessions, not Agent configuration. `init` does not
+accept `--workspace`; choose an existing absolute `--working-directory` for each
+`sessions create`. There is no global directory allowlist. For configs created
+by earlier Canaries, remove `agents[].workspaces` before upgrading: the obsolete
+field is rejected, not silently ignored.
 
 The HTTP listener defaults to loopback. `--port 0` chooses an ephemeral port;
 use the URL printed by `serve`. The data root has one owner. Canonical profile

@@ -437,8 +437,6 @@ describe("acplus CLI", () => {
       "init",
       "--agent-command",
       process.execPath,
-      "--workspace",
-      directory,
       "--config",
       file,
       "--data-dir",
@@ -451,10 +449,28 @@ describe("acplus CLI", () => {
       "0",
     ]);
     const config: unknown = parse(await readFile(file, "utf8"));
+    expect(await readFile(file, "utf8")).not.toContain("workspaces:");
     expect(config).toMatchObject({
       schemaVersion: 2,
       agents: [{ authentication: { loginAccount: "wewei" } }],
     });
+    await expect(
+      run(["init", "--agent-command", process.execPath, "--config", file]),
+    ).rejects.toThrow(ConfigurationError);
+    await expect(
+      run([
+        "init",
+        "--agent-command",
+        join(directory, "missing"),
+        "--config",
+        file,
+      ]),
+    ).rejects.toThrow(ConfigurationError);
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it("rejects the removed init workspace option instead of ignoring it", async () => {
+    const directory = await root();
+    const file = join(directory, "config.yaml");
     await expect(
       run([
         "init",
@@ -466,17 +482,7 @@ describe("acplus CLI", () => {
         file,
       ]),
     ).rejects.toThrow(ConfigurationError);
-    await expect(
-      run([
-        "init",
-        "--agent-command",
-        join(directory, "missing"),
-        "--workspace",
-        directory,
-        "--config",
-        file,
-      ]),
-    ).rejects.toThrow(ConfigurationError);
+    await expect(access(file)).rejects.toMatchObject({ code: "ENOENT" });
     expect(mocks.start).not.toHaveBeenCalled();
   });
   it("initializes YAML under the user home and serves it without --config", async () => {
@@ -484,13 +490,7 @@ describe("acplus CLI", () => {
     mocks.home.mockReturnValue(directory);
     const home = join(directory, ".acplus");
     const file = join(home, "acplus.yaml");
-    await run([
-      "init",
-      "--agent-command",
-      process.execPath,
-      "--workspace",
-      directory,
-    ]);
+    await run(["init", "--agent-command", process.execPath]);
     const raw = await readFile(file, "utf8");
     expect(raw).toContain("schemaVersion: 2");
     expect(raw).not.toMatch(/^\{/u);
@@ -510,13 +510,7 @@ describe("acplus CLI", () => {
       expect((await stat(file)).mode & 0o777).toBe(0o600);
     }
     await expect(
-      run([
-        "init",
-        "--agent-command",
-        process.execPath,
-        "--workspace",
-        directory,
-      ]),
+      run(["init", "--agent-command", process.execPath]),
     ).rejects.toThrow(ConfigurationError);
     vi.spyOn(process, "once").mockImplementation(() => process);
     await run(["serve"]);
@@ -546,8 +540,6 @@ describe("acplus CLI", () => {
         "init",
         "--agent-command",
         process.execPath,
-        "--workspace",
-        directory,
         "--config",
         join(directory, "missing", "custom.yaml"),
       ]),
@@ -562,8 +554,6 @@ describe("acplus CLI", () => {
       "init",
       "--agent-command",
       process.execPath,
-      "--workspace",
-      directory,
       "--data-dir",
       dataDir,
       "--profile",

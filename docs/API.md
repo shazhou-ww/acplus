@@ -65,8 +65,13 @@ service-side durable store is distinct from browser/proxy HTTP caching.
 }
 ```
 
-Creation validates the configured Agent and canonical allowed workspace and
-persists a Session without spawning. No synthetic Chat is created.
+Creation validates the configured Agent and an existing absolute host directory,
+canonicalizes that directory, and persists a Session without spawning. No
+synthetic Chat is created. Each Session independently chooses its working
+directory; Agent configuration does not impose a workspace-root allowlist. The
+directory is checked again before execution. Relative paths fail with
+`invalid_input`; missing paths or non-directories fail with
+`workspace_unavailable`.
 
 Submit to `/sessions/{sessionId}/turns`:
 

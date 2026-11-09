@@ -17,10 +17,10 @@ YAML. Duplicate keys, multiple documents, unknown tags and excessive aliases are
 rejected. HTTP request and response formats remain JSON.
 
 Each Agent uses an explicit native executable and argument array, dedicated
-profile, allowed workspace roots, and optional configured MCP servers. Relative
-data/profile/workspace/secret-file paths resolve from the config file; stdin
-configuration resolves from the invoking directory. Executables must be absolute
-native paths, not `.cmd`/`.bat` shims.
+profile and optional configured MCP servers. Work directories are chosen per
+Session, not in Agent configuration. Relative data/profile/secret-file paths
+resolve from the config file; stdin configuration resolves from the invoking
+directory. Executables must be absolute native paths, not `.cmd`/`.bat` shims.
 
 ```yaml
 schemaVersion: 2
@@ -35,7 +35,6 @@ agents:
     command: /usr/local/bin/copilot
     args: ["--acp"]
     profileDir: ./copilot-profile
-    workspaces: ["/srv/work/project"]
     permission: deny
     idleTimeoutMs: 0
     authentication:
@@ -43,10 +42,17 @@ agents:
       loginAccount: YOUR-LOGIN
 ```
 
-Replace the executable, existing workspace and expected account explicitly.
-Setting paths is not evidence of login. Service startup creates private storage
-and explicit profile directories, but never launches an Agent merely to inspect
-them. Session creation and GETs are local-only.
+Replace the executable and expected account explicitly. Setting paths is not
+evidence of login. Service startup creates private storage and explicit profile
+directories, but never launches an Agent merely to inspect them. Session
+creation and GETs are local-only.
+
+Each `sessions create` requires its own existing absolute `workingDirectory`.
+The path is canonicalized and checked again before execution; it need not be
+within a configured root. There is no global workspace allowlist or OS sandbox.
+Remove `agents[].workspaces` from older Canary configurations before upgrading;
+the removed field fails strict validation instead of being silently ignored.
+Existing persisted Session directories remain unchanged.
 
 | Field                         | Default / rule                                               |
 | ----------------------------- | ------------------------------------------------------------ |

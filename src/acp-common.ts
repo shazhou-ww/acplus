@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { isAbsolute } from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
 import type { AgentConfig, ErrorInfo } from "./acp-types.js";
 import { ServiceError } from "./errors.js";
@@ -63,33 +63,22 @@ export function profileIdentity(agent: AgentConfig): string {
     .digest("hex");
 }
 
-export async function workspace(
-  agent: AgentConfig,
-  directory: string,
-): Promise<string> {
+export async function workspace(directory: string): Promise<string> {
   if (!isAbsolute(directory))
-    throw new ServiceError("workspace_not_allowed", 403);
+    throw new ServiceError(
+      "invalid_input",
+      400,
+      "workingDirectory must be absolute",
+    );
   let canonical: string;
-  let roots: string[];
   try {
     canonical = await realpath(directory);
-    roots = await Promise.all(agent.workspaces.map((root) => realpath(root)));
     if (!(await stat(canonical)).isDirectory())
       throw new ServiceError("workspace_unavailable", 400);
   } catch (error) {
     if (error instanceof ServiceError) throw error;
     throw new ServiceError("workspace_unavailable", 400);
   }
-  if (
-    !roots.some((root) => {
-      const child = relative(root, canonical);
-      return (
-        child === "" ||
-        (!isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`))
-      );
-    })
-  )
-    throw new ServiceError("workspace_not_allowed", 403);
   return canonical;
 }
 

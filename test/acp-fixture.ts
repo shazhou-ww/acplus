@@ -66,7 +66,6 @@ export function fixtureConfig(directory: string): Config {
           TEST_API_KEY: "fixture-secret-value",
         },
         profileDir: join(directory, "profile"),
-        workspaces: [directory],
         mcpServers: [],
         startupTimeoutMs: 5000,
         idleTimeoutMs: 0,

@@ -48,7 +48,6 @@ export const schema = object(
           },
           env: { type: "object", additionalProperties: secret, default: {} },
           profileDir: nonempty,
-          workspaces: { type: "array", minItems: 1, items: nonempty },
           mcpServers: {
             type: "array",
             default: [],
@@ -102,7 +101,7 @@ export const schema = object(
             },
           }),
         },
-        ["id", "command", "profileDir", "workspaces"],
+        ["id", "command", "profileDir"],
       ),
     },
   },
@@ -142,7 +141,6 @@ export function validateConfig(input: unknown, base = process.cwd()): Config {
     if (profiles.has(profile))
       throw new ConfigurationError("Agents must not share credential profiles");
     profiles.add(profile);
-    agent.workspaces = agent.workspaces.map((path) => resolve(base, path));
     for (const value of Object.values(agent.env))
       if (typeof value !== "string" && value.source === "file")
         value.path = resolve(base, value.path);

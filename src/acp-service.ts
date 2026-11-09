@@ -280,7 +280,7 @@ export class Service {
 
   async createSession(agentId: string, directory: string): Promise<Session> {
     const agent = this.select(agentId);
-    const canonical = await workspace(agent.config, directory);
+    const canonical = await workspace(directory);
     this.assertReady();
     return this.store.createSession(agentId, canonical, agent.identity);
   }
@@ -309,7 +309,7 @@ export class Service {
     const agent = this.select(session.agentId);
     if (session.profileIdentity !== agent.identity)
       throw new ServiceError("session_binding_changed", 409);
-    await workspace(agent.config, session.workingDirectory);
+    await workspace(session.workingDirectory);
     this.assertReady();
     if (agent.busy) throw new ServiceError("agent_busy", 409);
     const admitted = this.store.admitTurn(sessionId, turnId, prompt);

@@ -90,14 +90,16 @@ Each configured Agent declares:
 
 - Stable `id`, label, native executable, argument array, and startup timeout.
 - A dedicated credential/state profile and explicit environment references.
-- Allowed workspace roots, configured MCP servers, and tool permission policy.
+- Configured MCP servers and tool permission policy.
 - Idle timeout and an Agent-specific authentication adapter where necessary.
 
-Requests select an `agentId` and a working directory inside its allowed roots.
-They cannot submit executable paths, shell commands, environment overrides,
-credential profiles, MCP servers, or arbitrary provider configuration.
-Canonicalize workspace paths and enforce symlink-aware boundaries. Configuration
-and workspace checks may access the local filesystem without starting an Agent.
+Requests select an `agentId` and an existing absolute working directory for each
+Session. They cannot submit executable paths, shell commands, environment
+overrides, credential profiles, MCP servers, or arbitrary provider
+configuration. Canonicalize and validate Session directories, resolving
+symlinks; there is no global directory allowlist in Agent configuration.
+Configuration and workspace checks may access the local filesystem without
+starting an Agent.
 
 Use one owned ACP process per configured Agent, with several Sessions where the
 Agent supports them. Coalesce concurrent starts. The initial scheduler admits

@@ -1,4 +1,12 @@
-import { mkdtemp, rm, writeFile, mkdir, realpath } from "node:fs/promises";
+import {
+  mkdtemp,
+  rm,
+  writeFile,
+  mkdir,
+  realpath,
+  symlink,
+  readFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,7 +21,7 @@ import {
   text,
   profileIdentity,
 } from "../src/acp-common.js";
-import { loadConfig, validateConfig } from "../src/acp-config.js";
+import { loadConfig, validateConfig, schema } from "../src/acp-config.js";
 import { fixtureConfig } from "./acp-fixture.js";
 
 const directories: string[] = [];
@@ -40,6 +48,9 @@ describe("ACP configuration and safe helpers", () => {
     expect(() => validateConfig({ ...config, taskQueue: true })).toThrow(
       ConfigurationError,
     );
+    const obsolete = structuredClone(config);
+    Object.assign(obsolete.agents[0]!, { workspaces: [root] });
+    expect(() => validateConfig(obsolete)).toThrow(ConfigurationError);
     for (const command of ["copilot", "C:\\copilot.cmd", "C:\\copilot.bat"]) {
       const bad = structuredClone(config);
       bad.agents[0]!.command = command;
@@ -50,6 +61,16 @@ describe("ACP configuration and safe helpers", () => {
     expect(() => validateConfig(duplicate)).toThrow(ConfigurationError);
     duplicate.agents[1]!.id = "other";
     expect(() => validateConfig(duplicate)).toThrow(ConfigurationError);
+  });
+  it("keeps the documented configuration schema identical to the runtime", async () => {
+    expect(
+      JSON.parse(
+        await readFile(
+          new URL("../docs/agent-config.schema.json", import.meta.url),
+          "utf8",
+        ),
+      ),
+    ).toEqual(schema);
   });
   it("applies defaults and resolves explicit file paths", async () => {
     const root = await directory();
@@ -62,7 +83,6 @@ describe("ACP configuration and safe helpers", () => {
             id: "copilot",
             command: process.execPath,
             profileDir: "profile",
-            workspaces: ["workspace"],
             env: {
               TOKEN: { source: "file", path: "token" },
               NAME: { source: "env", name: "TOKEN" },
@@ -105,26 +125,31 @@ describe("ACP configuration and safe helpers", () => {
         ConfigurationError,
       );
   });
-  it("checks real workspace boundaries and proper IDs without spawning", async () => {
+  it("checks session directories and proper IDs without global workspace roots", async () => {
     const root = await directory();
     const child = join(root, "workspace");
     await mkdir(child);
     const config = fixtureConfig(root);
     const agent = config.agents[0]!;
-    expect(await workspace(agent, child)).toBe(await realpath(child));
-    await expect(workspace(agent, join(root, "missing"))).rejects.toMatchObject(
-      { code: "workspace_unavailable" },
-    );
-    await expect(workspace(agent, "relative")).rejects.toMatchObject({
-      code: "workspace_not_allowed",
+    expect(await workspace(child)).toBe(await realpath(child));
+    await expect(workspace(join(root, "missing"))).rejects.toMatchObject({
+      code: "workspace_unavailable",
+    });
+    await expect(workspace("relative")).rejects.toMatchObject({
+      code: "invalid_input",
     });
     const outside = await directory();
-    await expect(workspace(agent, outside)).rejects.toMatchObject({
-      code: "workspace_not_allowed",
-    });
+    expect(await workspace(outside)).toBe(await realpath(outside));
+    const alias = join(root, "alias");
+    await symlink(
+      outside,
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    expect(await workspace(alias)).toBe(await realpath(outside));
     const file = join(root, "not-directory");
     await writeFile(file, "");
-    await expect(workspace(agent, file)).rejects.toMatchObject({
+    await expect(workspace(file)).rejects.toMatchObject({
       code: "workspace_unavailable",
     });
     expect(uuid("12345678-1234-1234-1234-123456789abc", "id")).toContain(

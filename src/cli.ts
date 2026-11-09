@@ -18,7 +18,7 @@ const help = `acplus - on-demand Agents and durable Session history
 
 Usage:
   acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
-  acplus init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
+  acplus init --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
   acplus health --url BASE/v2
   acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
   acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
@@ -148,28 +148,23 @@ export async function run(args: string[]): Promise<void> {
       args.slice(1),
       [
         "agent-command",
-        "workspace",
         "config",
         "profile",
         "login-account",
         "data-dir",
         "port",
       ],
-      ["agent-command", "workspace"],
+      ["agent-command"],
     );
     const home = join(homedir(), ".acplus");
     const file = resolve(opts.config ?? join(home, "acplus.yaml"));
     const directory = resolve(opts["data-dir"] ?? join(home, "state"));
-    const workspace = resolve(opts.workspace ?? "");
     const executable = opts["agent-command"] ?? "";
     try {
-      if (
-        !(await stat(workspace)).isDirectory() ||
-        !(await stat(executable)).isFile()
-      )
-        throw new ConfigurationError("Workspace and executable must exist");
+      if (!(await stat(executable)).isFile())
+        throw new ConfigurationError("Agent executable must exist");
     } catch {
-      throw new ConfigurationError("Workspace and executable must exist");
+      throw new ConfigurationError("Agent executable must exist");
     }
     const config = validateConfig(
       {
@@ -183,7 +178,6 @@ export async function run(args: string[]): Promise<void> {
             label: "Copilot CLI",
             command: executable,
             profileDir: resolve(opts.profile ?? join(home, "copilot-profile")),
-            workspaces: [workspace],
             ...(opts["login-account"] === undefined
               ? {}
               : {

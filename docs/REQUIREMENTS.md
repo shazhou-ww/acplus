@@ -46,11 +46,12 @@ Session. Local identities survive backend availability changes.
 ### R1. Configure and provision an Agent
 
 The operator supplies a native command/argument array, explicit dedicated
-profile, allowed workspace roots, tool policy, and authentication mechanism.
-Requests can select configured Agents/workspaces but cannot register commands,
-profiles, environment overrides, MCP endpoints, or provider configurations.
-Device login displays only the public link/code and explicit storage choice;
-successful login is distinct from successful model execution.
+profile, tool policy, and authentication mechanism. Each Session selects its own
+existing absolute working directory, without a global workspace allowlist.
+Requests can select configured Agents but cannot register commands, profiles,
+environment overrides, MCP endpoints, or provider configurations. Device login
+displays only the public link/code and explicit storage choice; successful login
+is distinct from successful model execution.
 
 Provide operator-protected explicit authentication routes. Follow advertised
 agent-driven versus terminal flows, with tested native adapters where needed.

@@ -35,7 +35,6 @@ function config(): AgentConfig {
     args: ["--acp"],
     env: {},
     profileDir: directory,
-    workspaces: [],
     mcpServers: [],
     startupTimeoutMs: 1000,
     idleTimeoutMs: 0,

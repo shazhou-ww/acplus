@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  rm,
+  writeFile,
+  realpath,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -145,6 +152,32 @@ async function settled(
 }
 
 describe("ACP service admission and failure boundaries", () => {
+  it("chooses unrelated directories per Session and rechecks them before execution", async () => {
+    const { service, session, root } = await setup();
+    const other = await mkdtemp(join(tmpdir(), "acplus-session-directory-"));
+    roots.push(other);
+    const second = await service.createSession("copilot", other);
+    expect(session.workingDirectory).toBe(await realpath(root));
+    expect(second.workingDirectory).toBe(await realpath(other));
+    expect(state.attach).not.toHaveBeenCalled();
+    await expect(
+      service.createSession("copilot", "relative"),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      service.createSession("copilot", join(other, "missing")),
+    ).rejects.toMatchObject({ code: "workspace_unavailable" });
+    const file = join(other, "not-directory");
+    await writeFile(file, "");
+    await expect(service.createSession("copilot", file)).rejects.toMatchObject({
+      code: "workspace_unavailable",
+    });
+    await rm(other, { recursive: true });
+    await expect(
+      service.submit(second.sessionId, randomUUID(), "OK"),
+    ).rejects.toMatchObject({ code: "workspace_unavailable" });
+    expect(state.attach).not.toHaveBeenCalled();
+    expect(state.prompt).not.toHaveBeenCalled();
+  });
   it("validates Session binding and exact request identity", async () => {
     const { service, session } = await setup();
     expect(() => service.select("unknown")).toThrow(ServiceError);

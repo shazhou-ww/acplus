@@ -176,7 +176,7 @@ paths:
                 workingDirectory:
                   type: string
                   description:
-                    Absolute host directory within configured workspace roots
+                    Existing absolute host directory selected for this Session
       responses:
         "201":
           description:

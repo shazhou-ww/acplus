@@ -9,7 +9,7 @@ compatibility.
 acplus --help
 acplus --version
 acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
-acplus init --agent-command PATH --workspace PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
+acplus init --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
 acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
@@ -85,16 +85,18 @@ supported SDK/API facade; use explicit `serve` for ordinary HTTP/auth clients.
 `~/.acplus/acplus.yaml`. It creates only the default parent `~/.acplus` (0700 on
 Linux); explicit custom parents must exist. Data defaults to `~/.acplus/state`
 and the Copilot profile to `~/.acplus/copilot-profile`. All three explicit flags
-override their defaults independently. `serve` without `--config` reads the
-fixed home path; it never scans the current directory or migrates an old config.
+override their defaults independently. `init` does not select a workspace: each
+Session supplies an existing absolute `--working-directory` at creation.
+`--workspace` is not accepted. `serve` without `--config` reads the fixed home
+path; it never scans the current directory or migrates an old config.
 `--config -` reads YAML from stdin. It does not install software, launch an
 Agent, log in, query a credential store, or send a paid probe. Provide an
-existing executable and workspace, and select a private data root/profile
-outside the workspace. Existing files and symlinks are not overwritten.
+existing executable, and select a private data root/profile outside future
+Session work directories. Existing files and symlinks are not overwritten.
 
 ```bash
 acplus init --agent-command "$(command -v copilot)" \
-  --workspace /srv/work/project --data-dir /srv/acplus/state \
+  --data-dir /srv/acplus/state \
   --profile /srv/acplus/credentials/copilot --login-account YOUR-LOGIN \
   --config /srv/acplus/config.yaml --port 4280
 acplus serve --config /srv/acplus/config.yaml

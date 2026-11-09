@@ -10,7 +10,6 @@ export interface AgentConfig {
   args: string[];
   env: Record<string, string | SecretReference>;
   profileDir: string;
-  workspaces: string[];
   mcpServers: McpServer[];
   startupTimeoutMs: number;
   idleTimeoutMs: number;

@@ -248,7 +248,8 @@ jobs:
           const data = join(fixture, 'state');
           mkdirSync(workspace, { recursive: true });
           const initConfig = join(fixture, 'acplus.yaml');
-          const args = ['init', '--agent-command', process.execPath, '--workspace', workspace, '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
+          const legacyWorkspace = rootHelp.includes('init --agent-command PATH --workspace PATH');
+          const args = ['init', '--agent-command', process.execPath, ...(legacyWorkspace ? ['--workspace', workspace] : []), '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
           const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
           assert.deepEqual(result, { config: initConfig });
           const original = readFileSync(initConfig);
@@ -262,6 +263,7 @@ jobs:
           assert.equal(existsSync(data), false, 'init must not create data or profile directories');
           assert.equal(generated.schemaVersion, 2);
           assert.equal(generated.agents.length, 1);
+          if (!legacyWorkspace) assert.equal(Object.hasOwn(generated.agents[0], 'workspaces'), false);
           assert.equal(generated.agents[0].command, process.execPath);
           assert.deepEqual(generated.agents[0].args, ['--acp']);
           assert.equal(generated.agents[0].permission, 'deny');
