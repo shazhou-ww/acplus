@@ -13,20 +13,72 @@ acplus init --agent-command PATH [--config FILE --profile PATH --login-account L
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
 acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
-acplus turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|-]
+acplus sessions send SESSION "MESSAGE" [--turn UUID --no-wait --timeout-ms N]
+acplus sessions delete SESSION [--yes]
+acplus turns list|start|get|cancel --session SESSION [--turn UUID --text TEXT --text-file FILE|-]
 acplus events list --session UUID [--turn UUID --after N --limit N]
 ```
+
+## Conversation and output
+
+```powershell
+acplus sessions create --agent copilot --working-directory 'D:\Code\ahplex'
+acplus sessions send SESSION "Explain this project. Do not change files."
+acplus sessions send SESSION "Explain the entry point in more detail."
+acplus sessions delete SESSION
+```
+
+Replace SESSION with the returned UUID or a unique prefix of at least eight
+characters. Prefixes are resolved against the selected local data directory or
+remote service, across all pages; ambiguous selectors fail rather than choosing
+the latest or first Session. Session names and interactive chat are not added.
+
+`sessions send` generates a Turn ID, submits once, waits, and prints the final
+reply. The equivalent option form is
+`sessions send --session SESSION --text "MESSAGE"`. Use `--text-file FILE|-`
+instead for files or stdin; supplying both input forms fails. `turns start` also
+accepts direct text and generates a Turn ID, but intentionally returns admission
+without waiting. Explicit `--turn UUID` remains available for idempotent
+automation.
+
+Session/Turn IDs are printed to stderr before dispatch, including structured
+`turn_submitting` JSON with `--json`. Keep that receipt: a failed/lost response
+must be reconciled with `turns get` or retried with the same ID and exact text,
+never a newly generated ID. The CLI does not silently retry admission.
+`--no-wait` returns admission only. Waiting defaults to 300000 ms, configurable
+with `--timeout-ms` (100..86400000). Timeout or Ctrl+C stops waiting, not the
+Agent; use `turns cancel` to explicitly request cancellation. Waiting uses
+committed local history or remote HTTP observations, not paid liveness probes.
+
+All commands now default to human-readable output; **scripts must add
+`--json`**. This intentionally changes the old default. JSON stdout remains a
+single resource/page result, with progress and structured errors on stderr.
+Version/help remain text. A waited send exits nonzero for
+error/cancelled/unknown or a timeout; low-level `turns get` still succeeds when
+observing a valid error/unknown record. Use `acplus sessions send --help`,
+`acplus turns get --help`, etc. for focused usage instead of the entire command
+catalogue.
+
+`sessions delete` permanently removes only local Session/Turns/Events.
+Interactive use requires typing `yes`; scripts must pass `--yes`. Projects,
+credentials and Agent-owned backend history are not deleted. Active Agent work
+or nonterminal/ unknown Turns block deletion; cancel and reconcile first.
+Confirmation is not an automatic cancellation request. Deletion is not forensic
+disk erasure and does not remove independent backups.
 
 Explicit `--url BASE/v2` or `ACPLUS_URL` always selects HTTP, even on loopback.
 It never enables fallback startup. With neither, Sessions/Turns list/get and
 events list read committed SQLite directly; sessions create and turns start
-discover/start a private background service; turns cancel requires its live
-owner and never starts a replacement. Agents and health still require a URL.
+discover/start a private background service; send/delete use the same writer.
+Local Agent catalogue/auth/login/logout commands also discover/start that
+service; auth input and cancellation require its existing owner, and health only
+checks an existing service. None of these auth/status commands is an offline
+database substitute or an implicit model execution.
 Unknown/repeated/incomplete/irrelevant options fail before an HTTP request.
-Output is JSON except offline help/version and the service's startup URL. Exit
-codes: 0 for successful observations/interactions, 1 for operation/HTTP errors,
-2 for invalid CLI/config input. Reading an `error` or `unknown` Turn is still a
-successful observation, not a command-level execution success.
+Output defaults to text, or JSON with `--json`. Exit codes: 0 for successful
+observations/interactions, 1 for operation/HTTP errors, 2 for invalid CLI/config
+input. Reading an `error` or `unknown` Turn is still a successful observation,
+not a command-level execution success.
 
 ## Local service selection
 
@@ -40,15 +92,16 @@ integer validation, filters and pagination share the HTTP history helpers. Each
 query sees a committed snapshot; successive commands/pages can differ. Stored
 running/cancelling status is last-observed evidence, not liveness.
 
-For local sessions create/turns start, `--idle-grace-ms N` selects the grace of
-a newly launched service, default **30000 ms**, range **100..86400000**. It does
-not change an existing service. The service uses an ephemeral loopback port and
-one canonical-data-directory writer; first callers can race safely. Startup
-readiness is bounded to 15 seconds, with explicit startup/ownership/ discovery
-errors. Native detached startup works on Windows and Linux, independent of
-caller lifetime. Windows discovery/account/ACL helper processes run with hidden
-windows, as do the background service and Agent. Private owner-only discovery
-and HMAC proof/signatures prevent trusting a PID or arbitrary port listener.
+For local sessions create/send, turns start or agents login, `--idle-grace-ms N`
+selects the grace of a newly launched service, default **30000 ms**, range
+**100..86400000**. It does not change an existing service. The service uses an
+ephemeral loopback port and one canonical-data-directory writer; first callers
+can race safely. Startup readiness is bounded to 15 seconds, with explicit
+startup/ownership/ discovery errors. Native detached startup works on Windows
+and Linux, independent of caller lifetime. Windows discovery/account/ACL helper
+processes run with hidden windows, as do the background service and Agent.
+Private owner-only discovery and HMAC proof/signatures prevent trusting a PID or
+arbitrary port listener.
 
 Automatic idle shutdown stops admission before draining accepted requests. No
 pending prompt, authentication flow, observed/ambiguous Agent background work or
@@ -70,7 +123,7 @@ unset ACPLUS_URL
 acplus sessions create --config /srv/acplus/config.yaml \
   --idle-grace-ms 1500 --agent copilot --working-directory /srv/work/project
 acplus turns start --config /srv/acplus/config.yaml \
-  --session SESSION-UUID --turn CALLER-TURN-UUID --text-file prompt.txt
+  --session SESSION-UUID --text-file prompt.txt
 acplus turns get --config /srv/acplus/config.yaml \
   --session SESSION-UUID --turn CALLER-TURN-UUID
 acplus events list --config /srv/acplus/config.yaml \
@@ -106,9 +159,8 @@ acplus serve --config /srv/acplus/config.yaml
 Provision only when needed:
 
 ```bash
-acplus agents login --agent copilot --method native-login \
-  --url http://127.0.0.1:4280/v2
-acplus agents auth --agent copilot --url http://127.0.0.1:4280/v2
+acplus agents login --agent copilot --method native-login
+acplus agents auth --agent copilot
 ```
 
 Login starts an explicit expiring flow; inspect auth for the device URL/code,
@@ -126,22 +178,22 @@ Copilot native terminal login currently requires Linux util-linux `script`.
 Configured saved credentials can serve ordinary execution without repeated human
 login. Cached success remains an observation, not perpetual validity.
 
-Create a local Session and execute:
+For automation, explicitly select JSON and an idempotency ID:
 
 ```bash
 acplus sessions create --agent copilot --working-directory /srv/work/project \
-  --url http://127.0.0.1:4280/v2
+  --json
 printf '%s' 'Reply with exactly OK. Do not use tools.' |
   acplus turns start --session SESSION-UUID --turn CALLER-TURN-UUID \
-    --text-file - --url http://127.0.0.1:4280/v2
+    --text-file - --json
 acplus turns get --session SESSION-UUID --turn CALLER-TURN-UUID \
-  --url http://127.0.0.1:4280/v2
+  --json
 acplus events list --session SESSION-UUID --turn CALLER-TURN-UUID \
-  --after 0 --limit 100 --url http://127.0.0.1:4280/v2
+  --after 0 --limit 100 --json
 ```
 
-Replace placeholders with actual local UUIDs; choose the Turn ID before sending
-so an ambiguous HTTP response can be reconciled without replay. Reads and
+Explicit IDs are optional for ordinary sending; automatic callers may choose
+their own before sending so an ambiguous response can be reconciled. Reads and
 Session creation never start the Agent. Event pagination uses Session-wide
 sequences and optional exact Turn filtering; sparse filtered sequences are
 normal. Cancellation targets the exact Session/Turn and waits for genuine

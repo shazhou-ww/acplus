@@ -45,6 +45,7 @@ All paths below are prefixed by `/v2`.
 | POST   | `/sessions`                                                   | 201, local Session only                                         |
 | GET    | `/sessions?agentId=...&cursor=...&limit=...`                  | local catalogue page                                            |
 | GET    | `/sessions/{sessionId}`                                       | local metadata and history coverage                             |
+| DELETE | `/sessions/{sessionId}`                                       | 204, atomic deletion of local Session/Turn/Event history        |
 | GET    | `/sessions/{sessionId}/events?turnId=...&after=...&limit=...` | ordered durable event page                                      |
 | POST   | `/sessions/{sessionId}/turns`                                 | 202, durable admission or identical existing Turn               |
 | GET    | `/sessions/{sessionId}/turns?cursor=...&limit=...`            | local Turn page                                                 |
@@ -52,11 +53,18 @@ All paths below are prefixed by `/v2`.
 | POST   | `/sessions/{sessionId}/turns/{turnId}/cancel`                 | 202, exact cancellation                                         |
 
 See [OpenAPI](openapi.yaml) for the machine contract. Requests require
-`application/json`, exact allowed fields, and at most 1 MiB. Unknown/repeated
-query parameters fail explicitly. Responses use `Cache-Control: no-store`; the
-service-side durable store is distinct from browser/proxy HTTP caching.
+`application/json`, exact allowed fields, and at most 1 MiB for JSON bodies.
+DELETE has no body. Unknown/repeated query parameters fail explicitly. Responses
+use `Cache-Control: no-store`; the service-side durable store is distinct from
+browser/proxy HTTP caching.
 
 ## Session creation and execution
+
+`DELETE /sessions/{sessionId}` permanently removes only local history in one
+transaction. It never removes workspace files, credentials, or the Agent's own
+backend Session. Missing Sessions are 404; nonterminal Turns or active Agent
+work are 409. Unknown execution outcomes remain fenced and cannot be deleted as
+if safely completed. Cancel and reconcile execution before deletion.
 
 ```json
 {

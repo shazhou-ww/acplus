@@ -66,6 +66,61 @@ afterEach(() => {
 });
 
 describe("direct ACP persistence", () => {
+  it("deletes only one Session and its local history, refusing active or unknown work", () => {
+    const store = open();
+    const first = owner(store);
+    const keep = owner(store);
+    store.setAuth(observation());
+    const active = admitted(store, first.sessionId);
+    failure(
+      () => {
+        store.deleteSession(first.sessionId);
+      },
+      "session_busy",
+      409,
+    );
+    expect(store.getTurn(first.sessionId, active.turnId).state).toBe(
+      "accepted",
+    );
+    start(store, first.sessionId, active.turnId);
+    store.setTurnState(first.sessionId, active.turnId, "unknown");
+    failure(
+      () => {
+        store.deleteSession(first.sessionId);
+      },
+      "turn_outcome_unknown",
+      409,
+    );
+    const empty = owner(store);
+    store.deleteSession(empty.sessionId);
+    failure(() => store.getSession(empty.sessionId), "session_not_found", 404);
+    const completed = admitted(store, keep.sessionId);
+    start(store, keep.sessionId, completed.turnId);
+    store.appendEvent(keep.sessionId, completed.turnId, "agent_message_chunk", {
+      content: { type: "text", text: "hello" },
+    });
+    store.setTurnState(keep.sessionId, completed.turnId, "complete");
+    store.deleteSession(keep.sessionId);
+    failure(() => store.getSession(keep.sessionId), "session_not_found", 404);
+    failure(
+      () => store.getTurn(keep.sessionId, completed.turnId),
+      "session_not_found",
+      404,
+    );
+    expect(
+      store.listSessions({ limit: 100 }).items.map((item) => item.sessionId),
+    ).toEqual([first.sessionId]);
+    expect(store.getAuth("agent", "profile").lastKnownStatus).toBe(
+      "authenticated",
+    );
+    failure(
+      () => {
+        store.deleteSession(keep.sessionId);
+      },
+      "session_not_found",
+      404,
+    );
+  });
   it("redacts short environment values without corrupting durable protocol metadata", () => {
     const { file } = fixture();
     const redactor = new Redactor();

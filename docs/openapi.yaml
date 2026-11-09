@@ -202,6 +202,23 @@ paths:
                 $ref: "#/components/schemas/Session"
         default:
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSession
+      summary: Permanently delete local Session, Turn and Event history
+      description: >
+        Does not delete project files, credential profiles or backend Agent
+        history. Active or ambiguous work is rejected. Agent runtime activity
+        may prevent deletion even when the target Session has only terminal
+        Turns.
+      responses:
+        "204":
+          description: Local history deleted atomically
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        default:
+          $ref: "#/components/responses/Error"
   /v2/sessions/{sessionId}/events:
     parameters:
       - $ref: "#/components/parameters/SessionId"

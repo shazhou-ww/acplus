@@ -9,6 +9,11 @@ alias. Historical Silvermoon records and Git commits remain unchanged.
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
 
+The CLI usability changes in this checkout (human-readable defaults,
+`sessions send`, short Session selectors and `sessions delete`) are not yet in
+the published `.5` Canary. Use the built checkout entry for these commands;
+older installed scripts retain their prior behavior until upgraded.
+
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
@@ -127,7 +132,8 @@ acplus serve
 custom parents must already exist. `serve` never scans the current directory and
 reports a missing default config rather than creating one or falling back.
 `--config -` reads YAML from stdin. Explicit paths remain authoritative; no old
-configuration is migrated. HTTP payloads and client output remain JSON.
+configuration is migrated. HTTP payloads remain JSON; CLI scripts explicitly
+select `--json`, while interactive commands default to readable text.
 
 Work directories belong to Sessions, not Agent configuration. `init` does not
 accept `--workspace`; choose an existing absolute `--working-directory` for each
@@ -177,18 +183,28 @@ login is not a Copilot entitlement/billing guarantee.
 
 ```bash
 acplus sessions create --agent copilot --working-directory /srv/work/project \
-  --url http://127.0.0.1:4280/v2
-printf '%s' 'Reply with exactly OK. Do not use tools.' |
-  acplus turns start --session SESSION-UUID --turn CALLER-TURN-UUID \
-    --text-file - --url http://127.0.0.1:4280/v2
+  --json
+acplus sessions send SESSION-UUID "Reply with exactly OK. Do not use tools."
+acplus sessions send SESSION-UUID "Now explain the project entry point."
 acplus turns get --session SESSION-UUID --turn CALLER-TURN-UUID \
-  --url http://127.0.0.1:4280/v2
+  --json
 acplus events list --session SESSION-UUID --turn CALLER-TURN-UUID \
-  --after 0 --limit 100 --url http://127.0.0.1:4280/v2
+  --after 0 --limit 100 --json
+acplus sessions delete SESSION-UUID
 ```
 
-Replace placeholders with local UUIDs, choosing the Turn ID before sending. An
-explicit `--url BASE/v2` or `ACPLUS_URL` always uses that HTTP service,
+Replace Session placeholders with a UUID or unique prefix of at least eight
+characters. `sessions send` generates a Turn ID, prints IDs to stderr before
+dispatch, waits, and displays the reply. Use the returned Turn ID for low-level
+queries; scripts use `--json`. `--no-wait` opts into admission only; an explicit
+`--turn UUID` supports idempotent automation. A wait timeout or Ctrl+C does not
+cancel execution, and lost responses are never automatically resent.
+
+Deletion confirms interactively or requires `--yes` for scripts. Only acplus
+local history is removed, not workspace files, credentials or backend history;
+active or unknown execution prevents deletion.
+
+An explicit `--url BASE/v2` or `ACPLUS_URL` always uses that HTTP service,
 including loopback; failed HTTP requests never start a replacement. Without
 either, use the same commands with `--config /srv/acplus/config.yaml` instead of
 `--url`: Session/Turn list/get and event list read committed SQLite directly,
@@ -217,8 +233,9 @@ permissions; Windows uses and verifies a current-user-only DACL through native
 `whoami.exe`/`icacls.exe`. Do not copy or publish discovery secrets.
 
 Explicit `serve` (and the exported `start(config)`) remains persistent and
-supports ordinary HTTP, including agents/auth/health. Those CLI commands still
-require a URL; they have not become offline history queries. A local CLI can
+supports ordinary HTTP, including agents/auth/health. Local Agent/auth commands
+discover/start the service without a URL, while health/auth-input/cancel require
+an existing owner; they have not become offline history queries. A local CLI can
 reuse a persistent service reachable on loopback without making it automatic.
 After an abrupt crash, stale/foreign ownership remains an explicit error;
 ownership files are never reclaimed using a PID, port, or command name.

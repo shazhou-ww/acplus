@@ -230,8 +230,9 @@ jobs:
           const executable = join(directory, 'node_modules', '.bin', 'acplus');
           assert.equal(execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim(), `acplus ${version} (HTTP /v2, ACP v1)`);
           const rootHelp = execFileSync(executable, ['--help'], { encoding: 'utf8' });
-          assert.match(rootHelp, /acplus turns list\|start\|get\|cancel/);
-          assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /acplus turns list\|start\|get\|cancel/);
+          const humanDefault = rootHelp.includes('sessions send SESSION');
+          assert.match(rootHelp, /acplus turns (?:list\|start\|get\|cancel|start --session)/);
+          assert.match(execFileSync(executable, ['turns', 'get', '--help'], { encoding: 'utf8' }), /acplus turns (?:list\|start\|get\|cancel|get --session)/);
           let rejected = false;
           try {
             execFileSync(executable, ['turns', 'get'], { encoding: 'utf8', stdio: 'pipe' });
@@ -249,7 +250,7 @@ jobs:
           mkdirSync(workspace, { recursive: true });
           const initConfig = join(fixture, 'acplus.yaml');
           const legacyWorkspace = rootHelp.includes('init --agent-command PATH --workspace PATH');
-          const args = ['init', '--agent-command', process.execPath, ...(legacyWorkspace ? ['--workspace', workspace] : []), '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
+          const args = ['init', '--agent-command', process.execPath, ...(legacyWorkspace ? ['--workspace', workspace] : []), ...(humanDefault ? ['--json'] : []), '--data-dir', data, '--profile', join(fixture, 'profile'), '--login-account', 'fixture-user', '--port', '4293'];
           const result = JSON.parse(execFileSync(executable, [...args, '--config', initConfig], { encoding: 'utf8' }));
           assert.deepEqual(result, { config: initConfig });
           const original = readFileSync(initConfig);

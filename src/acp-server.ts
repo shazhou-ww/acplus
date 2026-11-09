@@ -144,6 +144,11 @@ async function route(service: Service, request: IncomingMessage) {
   const sessionId = uuid(match[1], "sessionId");
   const operation = match[2];
   const turnId = match[3] === undefined ? undefined : uuid(match[3], "turnId");
+  if (method === "DELETE" && operation === undefined) {
+    query();
+    service.deleteSession(sessionId);
+    return { status: 204 };
+  }
   if (operation === "turns") {
     if (method === "POST" && turnId === undefined) {
       query();

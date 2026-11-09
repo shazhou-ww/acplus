@@ -74,6 +74,28 @@ afterEach(async () => {
 });
 
 describe("durable ACP HTTP /v2", () => {
+  it("deletes committed Session history with explicit busy and missing errors", async () => {
+    const { root, service, server } = await setup();
+    const id = await session(server.url, root);
+    const turnId = randomUUID();
+    service.store.admitTurn(id, turnId, "pending");
+    expect((await api(server.url, `/sessions/${id}`, "DELETE")).status).toBe(
+      409,
+    );
+    service.store.setTurnState(id, turnId, "cancelled");
+    expect(
+      (await api(server.url, `/sessions/${id}?unexpected=x`, "DELETE")).status,
+    ).toBe(400);
+    expect((await api(server.url, `/sessions/${id}`, "DELETE")).status).toBe(
+      204,
+    );
+    expect((await api(server.url, `/sessions/${id}`)).status).toBe(404);
+    expect((await api(server.url, `/sessions/${id}/turns`)).status).toBe(404);
+    expect((await api(server.url, `/sessions/${id}/events`)).status).toBe(404);
+    expect((await api(server.url, `/sessions/${id}`, "DELETE")).status).toBe(
+      404,
+    );
+  });
   it("creates local Sessions and serves all reads when the executable is unavailable", async () => {
     const { root, server } = await setup((config) => {
       config.agents[0]!.command = join(tmpdir(), "missing-copilot");

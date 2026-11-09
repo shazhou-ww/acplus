@@ -1,12 +1,23 @@
 #!/usr/bin/env node
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
-import { ConfigurationError, record, ServiceError } from "./acp-common.js";
+import {
+  ConfigurationError,
+  diagnostic,
+  record,
+  ServiceError,
+  text,
+  uuid,
+} from "./acp-common.js";
 import { loadConfig, validateConfig } from "./acp-config.js";
 import { history, integer } from "./acp-history.js";
+import { helpFor, printResult } from "./cli-display.js";
+import type { Config } from "./acp-types.js";
 import {
   defaultIdleGraceMs,
   localHeaders,
@@ -14,43 +25,27 @@ import {
   type LocalOwner,
 } from "./local-service.js";
 
-const help = `acplus - on-demand Agents and durable Session history
-
-Usage:
-  acplus serve [--config FILE] [--port N --listen-host ADDRESS --data-dir PATH]
-  acplus init --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
-  acplus health --url BASE/v2
-  acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
-  acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH]
-  acplus turns list|start|get|cancel --session UUID [--turn UUID --text-file FILE|-]
-  acplus events list --session UUID [--turn UUID --after N --limit N]
-
-Without a URL, sessions/turns list|get and events list read committed SQLite.
-Local sessions create and turns start discover/start a private background service.
-Local turns cancel requires the live owner; it never starts a replacement.
-Local options: --config FILE --data-dir PATH --idle-grace-ms N (100..86400000;
-default 30000, only automatically launched services). Output is JSON.
---url BASE/v2 or ACPLUS_URL always uses HTTP only. Agents/health require a URL.
-Default YAML config: ~/.acplus/acplus.yaml; data: ~/.acplus/state.
-All reads and Session creation are local. Login is explicit, not a paid probe.
-Login returns a flow; use agents auth to inspect public link/code and input steps.
-`;
-
 function options(args: string[], allowed: string[], required: string[] = []) {
   const result: Record<string, string> = {};
-  for (let index = 0; index < args.length; index += 2) {
+  for (let index = 0; index < args.length;) {
     const name = args[index];
-    const value = args[index + 1];
     if (
       name === undefined ||
       !name.startsWith("--") ||
       !allowed.includes(name.slice(2)) ||
-      Object.hasOwn(result, name.slice(2)) ||
-      value === undefined ||
-      value.startsWith("--")
+      Object.hasOwn(result, name.slice(2))
     )
       throw new ConfigurationError("Unknown, repeated, or incomplete option");
+    if (["--json", "--yes", "--no-wait"].includes(name)) {
+      result[name.slice(2)] = "true";
+      index += 1;
+      continue;
+    }
+    const value = args[index + 1];
+    if (value === undefined || (value.startsWith("--") && name !== "--text"))
+      throw new ConfigurationError("Unknown, repeated, or incomplete option");
     result[name.slice(2)] = value;
+    index += 2;
   }
   if (required.some((name) => !Object.hasOwn(result, name)))
     throw new ConfigurationError(`Required options: ${required.join(", ")}`);
@@ -73,8 +68,34 @@ async function input(file: string): Promise<string> {
   return result;
 }
 
-function print(value: unknown): void {
-  if (value !== null) console.log(JSON.stringify(value));
+function localHistory(config: Config, path: string): Promise<unknown> {
+  return import("./acp-store.js").then(({ Store }) => {
+    const store = new Store(
+      join(config.dataDir, "sessions.sqlite"),
+      undefined,
+      true,
+    );
+    try {
+      return store.snapshot(() =>
+        history(store, new URL(`/v2${path}`, "http://acplus.invalid"), (id) => {
+          if (!config.agents.some((agent) => agent.id === id))
+            throw new ServiceError("agent_not_found", 404);
+        }),
+      );
+    } finally {
+      store.close();
+    }
+  });
+}
+
+function isHelp(args: string[]): boolean {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--help" || arg === "-h") return true;
+    if (arg.startsWith("--") && !["--json", "--yes", "--no-wait"].includes(arg))
+      index += 1;
+  }
+  return false;
 }
 
 export async function run(args: string[]): Promise<void> {
@@ -87,8 +108,15 @@ export async function run(args: string[]): Promise<void> {
     console.log(`acplus ${metadata.version} (HTTP /v2, ACP v1)`);
     return;
   }
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-    console.log(help);
+  if (args.length === 0 || isHelp(args)) {
+    console.log(
+      helpFor(
+        args.slice(
+          0,
+          args[0]?.startsWith("-") ? 0 : args[1]?.startsWith("-") ? 1 : 2,
+        ),
+      ),
+    );
     return;
   }
   const command = args[0];
@@ -99,6 +127,7 @@ export async function run(args: string[]): Promise<void> {
       "port",
       "listen-host",
       "data-dir",
+      "json",
       ...(command === "_auto-serve" ? ["idle-grace-ms"] : []),
     ]);
     const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
@@ -122,7 +151,11 @@ export async function run(args: string[]): Promise<void> {
           )
         : await start(validateConfig(config));
     if (command === "_auto-serve" && process.connected) process.disconnect?.();
-    console.log(`acplus ${config.instance} listening at ${service.url}`);
+    if (opts.json === "true")
+      console.log(
+        JSON.stringify({ instance: config.instance, url: service.url }),
+      );
+    else console.log(`acplus ${config.instance} listening at ${service.url}`);
     let stopping = false;
     const stop = (): void => {
       if (stopping) return;
@@ -153,6 +186,7 @@ export async function run(args: string[]): Promise<void> {
         "login-account",
         "data-dir",
         "port",
+        "json",
       ],
       ["agent-command"],
     );
@@ -203,7 +237,7 @@ export async function run(args: string[]): Promise<void> {
         "Configuration must be a new file in an existing directory",
       );
     }
-    print({ config: file });
+    printResult("init", { config: file }, opts.json === "true");
     return;
   }
   const group = args[0] ?? "";
@@ -218,8 +252,18 @@ export async function run(args: string[]): Promise<void> {
     "sessions:list": ["url", "agent", "limit", "cursor"],
     "sessions:create": ["url", "agent", "working-directory"],
     "sessions:get": ["url", "session"],
+    "sessions:delete": ["url", "session", "yes"],
+    "sessions:send": [
+      "url",
+      "session",
+      "turn",
+      "text",
+      "text-file",
+      "no-wait",
+      "timeout-ms",
+    ],
     "turns:list": ["url", "session", "limit", "cursor"],
-    "turns:start": ["url", "session", "turn", "text-file"],
+    "turns:start": ["url", "session", "turn", "text", "text-file"],
     "turns:get": ["url", "session", "turn"],
     "turns:cancel": ["url", "session", "turn"],
     "events:list": ["url", "session", "turn", "after", "limit"],
@@ -227,12 +271,33 @@ export async function run(args: string[]): Promise<void> {
   const key = group === "health" ? "health" : `${group}:${action}`;
   if (!Object.hasOwn(commandOptions, key))
     throw new ConfigurationError("Unknown command");
-  const opts = options(args.slice(group === "health" ? 1 : 2), [
+  const rawOptions = args.slice(group === "health" ? 1 : 2);
+  if (
+    group === "sessions" &&
+    ["send", "delete"].includes(action) &&
+    rawOptions[0] !== undefined &&
+    !rawOptions[0].startsWith("--")
+  ) {
+    const selector = rawOptions.shift() ?? "";
+    let message: string | undefined;
+    const next = rawOptions.at(0);
+    if (action === "send" && next !== undefined && !next.startsWith("--"))
+      message = rawOptions.shift();
+    rawOptions.unshift("--session", selector);
+    if (message !== undefined) rawOptions.push("--text", message);
+  }
+  const opts = options(rawOptions, [
     ...(commandOptions[key] ?? []),
-    ...(["sessions", "turns", "events"].includes(group)
-      ? ["config", "data-dir"]
-      : []),
-    ...(["sessions:create", "turns:start"].includes(key)
+    "config",
+    "data-dir",
+    "json",
+    ...([
+      "sessions:create",
+      "turns:start",
+      "sessions:send",
+      "sessions:delete",
+      "agents:login",
+    ].includes(key)
       ? ["idle-grace-ms"]
       : []),
   ]);
@@ -242,6 +307,180 @@ export async function run(args: string[]): Promise<void> {
       throw new ConfigurationError(`--${name} is required`);
     return value;
   };
+  const requiredOptions: Record<string, string[]> = {
+    "agents:auth": ["agent"],
+    "agents:login": ["agent", "method"],
+    "agents:auth-input": ["agent", "input-file"],
+    "agents:logout": ["agent"],
+    "sessions:create": ["agent", "working-directory"],
+    "sessions:get": ["session"],
+    "sessions:delete": ["session"],
+    "sessions:send": ["session"],
+    "turns:list": ["session"],
+    "turns:start": ["session"],
+    "turns:get": ["session", "turn"],
+    "turns:cancel": ["session", "turn"],
+    "events:list": ["session"],
+  };
+  for (const name of requiredOptions[key] ?? []) requireOption(name);
+  const json = opts.json === "true";
+  const outputKind = group === "health" ? "health" : `${group} ${action}`;
+  const isSend = key === "sessions:send";
+  const isStart = isSend || key === "turns:start";
+  const waitTimeout = integer(opts["timeout-ms"], 300000, 100, 86400000);
+  if (
+    isStart &&
+    (opts.text === undefined) === (opts["text-file"] === undefined)
+  )
+    throw new ConfigurationError(
+      'Supply exactly one message: --text TEXT, --text-file FILE|-, or sessions send SESSION "MESSAGE"',
+    );
+  if (opts["no-wait"] === "true" && opts["timeout-ms"] !== undefined)
+    throw new ConfigurationError(
+      "--timeout-ms requires waiting; do not combine it with --no-wait",
+    );
+  if (isStart) {
+    opts.turn = Object.hasOwn(opts, "turn")
+      ? requireOption("turn")
+      : randomUUID();
+    uuid(opts.turn, "turnId");
+  }
+  let local: LocalOwner | undefined;
+  let config: Config | undefined;
+  const explicitUrl = opts.url ?? process.env.ACPLUS_URL;
+  const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
+  if (explicitUrl === undefined) {
+    config = await loadConfig(file);
+    if (opts["data-dir"] !== undefined)
+      config.dataDir = resolve(opts["data-dir"]);
+  }
+  const remoteRequest = async (
+    address: string,
+    method: string,
+    path: string,
+    value?: unknown,
+    timeoutMs = 30000,
+  ): Promise<unknown> => {
+    let base: URL;
+    try {
+      base = new URL(address);
+      if (
+        !["http:", "https:"].includes(base.protocol) ||
+        base.pathname.replace(/\/$/u, "") !== "/v2" ||
+        base.username ||
+        base.password ||
+        base.search ||
+        base.hash
+      )
+        throw new Error();
+    } catch {
+      throw new ConfigurationError("--url or ACPLUS_URL must name BASE/v2");
+    }
+    const response = await fetch(base.toString().replace(/\/$/u, "") + path, {
+      method,
+      headers: {
+        ...(local === undefined
+          ? {}
+          : localHeaders(local, method, `/v2${path}`)),
+        ...(value === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(value === undefined ? {} : { body: JSON.stringify(value) }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const raw = await response.text();
+    let result: unknown = null;
+    try {
+      if (raw !== "") result = JSON.parse(raw) as unknown;
+    } catch {
+      if (!response.ok)
+        throw new ServiceError("http_request_failed", response.status, raw);
+      throw new ServiceError("invalid_http_response", 502);
+    }
+    if (!response.ok) {
+      if (
+        record(result) &&
+        record(result.error) &&
+        typeof result.error.code === "string" &&
+        typeof result.error.message === "string"
+      )
+        throw new ServiceError(
+          result.error.code,
+          response.status,
+          result.error.message,
+        );
+      throw new ServiceError("http_request_failed", response.status, raw);
+    }
+    return result;
+  };
+  const read = (path: string, timeoutMs = 30000): Promise<unknown> =>
+    config === undefined
+      ? remoteRequest(explicitUrl ?? "", "GET", path, undefined, timeoutMs)
+      : localHistory(config, path);
+  if (
+    opts.session !== undefined &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(
+      opts.session,
+    )
+  ) {
+    const prefix = opts.session.toLowerCase();
+    if (!/^[0-9a-f]{8}[0-9a-f-]*$/u.test(prefix) || prefix.length >= 36)
+      throw new ConfigurationError(
+        "Session must be a UUID or a unique prefix of at least 8 characters",
+      );
+    const matches: string[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await read(
+        `/sessions?limit=1000${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+      );
+      if (
+        !record(page) ||
+        !Array.isArray(page.items) ||
+        (page.nextCursor !== null && typeof page.nextCursor !== "string")
+      )
+        throw new ServiceError("invalid_history_response", 502);
+      for (const item of page.items) {
+        if (!record(item) || typeof item.sessionId !== "string")
+          throw new ServiceError("invalid_history_response", 502);
+        if (item.sessionId.startsWith(prefix)) matches.push(item.sessionId);
+      }
+      cursor =
+        typeof page.nextCursor === "string" ? page.nextCursor : undefined;
+      if (cursor !== undefined && cursors.has(cursor))
+        throw new ServiceError("invalid_history_response", 502);
+      if (cursor !== undefined) cursors.add(cursor);
+    } while (cursor !== undefined);
+    const selected = matches[0];
+    if (matches.length !== 1 || selected === undefined)
+      throw new ServiceError(
+        matches.length === 0
+          ? "session_not_found"
+          : "session_selector_ambiguous",
+        matches.length === 0 ? 404 : 409,
+        "Session selector must match exactly one Session; use a longer prefix or full UUID",
+      );
+    opts.session = selected;
+  }
+  if (key === "sessions:delete" && opts.yes !== "true") {
+    if (!process.stdin.isTTY || !process.stderr.isTTY)
+      throw new ConfigurationError(
+        "Deletion requires --yes in non-interactive use",
+      );
+    const terminal = createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
+    try {
+      const answer = await terminal.question(
+        `Permanently delete Session ${requireOption("session")} and all its local history? Type yes: `,
+      );
+      if (answer.trim().toLowerCase() !== "yes")
+        throw new ConfigurationError("Deletion cancelled");
+    } finally {
+      terminal.close();
+    }
+  }
   let path = "";
   let method = "GET";
   let value: unknown;
@@ -270,7 +509,20 @@ export async function run(args: string[]): Promise<void> {
     }
   } else if (group === "sessions") {
     path = "/sessions";
-    if (action === "create") {
+    if (action === "send") {
+      path += `/${requireOption("session")}/turns`;
+      method = "POST";
+      value = {
+        turnId: opts.turn,
+        text: text(
+          opts.text ?? (await input(requireOption("text-file"))),
+          "text",
+        ),
+      };
+    } else if (action === "delete") {
+      path += `/${requireOption("session")}`;
+      method = "DELETE";
+    } else if (action === "create") {
       method = "POST";
       value = {
         agentId: requireOption("agent"),
@@ -289,8 +541,11 @@ export async function run(args: string[]): Promise<void> {
     if (action === "start") {
       method = "POST";
       value = {
-        turnId: requireOption("turn"),
-        text: await input(requireOption("text-file")),
+        turnId: opts.turn,
+        text: text(
+          opts.text ?? (await input(requireOption("text-file"))),
+          "text",
+        ),
       };
     } else if (action === "get") path += `/${requireOption("turn")}`;
     else if (action === "cancel") {
@@ -301,100 +556,103 @@ export async function run(args: string[]): Promise<void> {
   }
   for (const name of ["limit", "cursor"])
     if (opts[name] !== undefined) query.set(name, opts[name]);
-  let local: LocalOwner | undefined;
-  const explicitUrl = opts.url ?? process.env.ACPLUS_URL;
   let address = explicitUrl;
-  if (
-    explicitUrl === undefined &&
-    ["sessions", "turns", "events"].includes(group)
-  ) {
-    const file = opts.config ?? join(homedir(), ".acplus", "acplus.yaml");
-    const config = await loadConfig(file);
-    if (opts["data-dir"] !== undefined)
-      config.dataDir = resolve(opts["data-dir"]);
-    if (method === "GET") {
-      const { Store } = await import("./acp-store.js");
-      const store = new Store(
-        join(config.dataDir, "sessions.sqlite"),
-        undefined,
-        true,
+  if (config !== undefined) {
+    if (method === "GET" && ["sessions", "turns", "events"].includes(group)) {
+      printResult(
+        outputKind,
+        await read(path + (query.size ? `?${query.toString()}` : "")),
+        json,
       );
-      try {
-        print(
-          store.snapshot(() =>
-            history(
-              store,
-              new URL(
-                `/v2${path}?${query.toString()}`,
-                "http://acplus.invalid",
-              ),
-              (id) => {
-                if (!config.agents.some((agent) => agent.id === id))
-                  throw new ServiceError("agent_not_found", 404);
-              },
-            ),
-          ),
-        );
-      } finally {
-        store.close();
-      }
       return;
     }
     local = await localService(
       config,
       resolve(file),
       integer(opts["idle-grace-ms"], defaultIdleGraceMs, 100, 86400000),
-      action !== "cancel",
+      action !== "cancel" && action !== "auth-input" && group !== "health",
     );
     address = local.url;
   }
-  let base: URL;
-  try {
-    base = new URL(address ?? "");
-    if (
-      !["http:", "https:"].includes(base.protocol) ||
-      base.pathname.replace(/\/$/u, "") !== "/v2" ||
-      base.username ||
-      base.password ||
-      base.search ||
-      base.hash
-    )
-      throw new Error();
-  } catch {
-    throw new ConfigurationError("--url or ACPLUS_URL must name BASE/v2");
-  }
   const requestPath = path + (query.size ? `?${query.toString()}` : "");
-  const response = await fetch(
-    base.toString().replace(/\/$/u, "") +
-      path +
-      (query.size ? `?${query.toString()}` : ""),
-    {
-      method,
-      headers: {
-        ...(local === undefined
-          ? {}
-          : localHeaders(local, method, `/v2${requestPath}`)),
-        ...(value === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(value === undefined
-        ? {}
-        : {
-            body: JSON.stringify(value),
-          }),
-      signal: AbortSignal.timeout(30000),
-    },
-  );
-  const raw = await response.text();
-  if (!response.ok)
-    throw new ServiceError("http_request_failed", response.status, raw);
-  if (raw !== "") {
-    let result: unknown;
+  if (isStart) {
+    if (json)
+      console.error(
+        JSON.stringify({
+          event: "turn_submitting",
+          sessionId: opts.session,
+          turnId: opts.turn,
+        }),
+      );
+    else
+      console.error(
+        `Session: ${opts.session}\nTurn: ${opts.turn}\nKeep these IDs to reconcile a lost response; do not resend with a new Turn ID.`,
+      );
+  }
+  const result = await remoteRequest(address ?? "", method, requestPath, value);
+  if (!isSend || opts["no-wait"] === "true") {
+    printResult(
+      outputKind,
+      key === "sessions:delete" && json
+        ? { sessionId: opts.session, deleted: true }
+        : result,
+      json,
+    );
+    return;
+  }
+  const deadline = Date.now() + waitTimeout;
+  const turnPath = `/sessions/${requireOption("session")}/turns/${requireOption("turn")}`;
+  const waitFailure = () =>
+    new ServiceError(
+      "turn_wait_timeout",
+      408,
+      `Stopped waiting; execution may continue. Session ${opts.session}, Turn ${opts.turn}. Query or cancel this exact Turn; do not resend with a new ID.`,
+    );
+  for (;;) {
+    let current: unknown;
     try {
-      result = JSON.parse(raw);
-    } catch {
-      throw new ServiceError("invalid_http_response", 502);
+      current = await read(
+        turnPath,
+        Math.max(1, Math.min(30000, deadline - Date.now())),
+      );
+    } catch (error) {
+      if (Date.now() >= deadline) throw waitFailure();
+      throw error;
     }
-    print(result);
+    if (
+      !record(current) ||
+      current.sessionId !== opts.session ||
+      current.turnId !== opts.turn ||
+      typeof current.response !== "string" ||
+      ![
+        "accepted",
+        "starting",
+        "dispatching",
+        "running",
+        "cancelling",
+        "complete",
+        "cancelled",
+        "error",
+        "unknown",
+      ].includes(String(current.state))
+    )
+      throw new ServiceError("invalid_turn_response", 502);
+    if (
+      ["complete", "cancelled", "error", "unknown"].includes(
+        String(current.state),
+      )
+    ) {
+      if (json) printResult("turns get", current, true);
+      else if (current.state === "complete")
+        console.log(current.response || "Completed (no text response).");
+      else printResult("turns get", current, false);
+      if (current.state !== "complete") process.exitCode = 1;
+      return;
+    }
+    if (Date.now() >= deadline) throw waitFailure();
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(250, deadline - Date.now())),
+    );
   }
 }
 
@@ -412,7 +670,12 @@ if (
       });
       process.disconnect?.();
     }
-    console.error(error instanceof Error ? error.message : "Operation failed");
+    if (process.argv.includes("--json"))
+      console.error(JSON.stringify({ error: diagnostic(error) }));
+    else
+      console.error(
+        error instanceof Error ? error.message : "Operation failed",
+      );
     process.exitCode = error instanceof ConfigurationError ? 2 : 1;
   });
 }

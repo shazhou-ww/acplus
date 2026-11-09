@@ -439,6 +439,22 @@ export class Store {
     if (value.sessionId !== sessionId) corruption();
     return value;
   }
+  deleteSession(sessionId: string): void {
+    this.transaction(() => {
+      this.getSession(sessionId);
+      const turns = this.all(
+        "SELECT body FROM turns WHERE session_id=?",
+        sessionId,
+      ).map((row) => this.decode(row.body, turn));
+      if (turns.some((value) => value.state === "unknown"))
+        throw new ServiceError("turn_outcome_unknown", 409);
+      if (turns.some((value) => !terminal.has(value.state)))
+        throw new ServiceError("session_busy", 409);
+      this.run("DELETE FROM events WHERE session_id=?", sessionId);
+      this.run("DELETE FROM turns WHERE session_id=?", sessionId);
+      this.run("DELETE FROM sessions WHERE session_id=?", sessionId);
+    });
+  }
   private cursor(value: string | undefined, scope: string): number {
     if (value === undefined) return 0;
     try {

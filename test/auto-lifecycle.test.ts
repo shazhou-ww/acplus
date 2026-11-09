@@ -49,7 +49,7 @@ async function fixture() {
 }
 
 async function command(args: string[]) {
-  const result = await exec(process.execPath, [cli, ...args], {
+  const result = await exec(process.execPath, [cli, ...args, "--json"], {
     env,
     timeout: 20000,
   });
@@ -206,6 +206,7 @@ describe("offline committed history", () => {
       session.sessionId,
       "--turn",
       turn.turnId,
+      "--json",
     ]);
     expect(network).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenLastCalledWith(
@@ -252,6 +253,85 @@ describe("offline committed history", () => {
 });
 
 describe("native managed service processes", () => {
+  it("supports a complete human conversation and explicit local history deletion through the native CLI", async () => {
+    const { directory, config, file } = await fixture();
+    const created = await command([
+      "sessions",
+      "create",
+      "--config",
+      file,
+      "--agent",
+      "copilot",
+      "--working-directory",
+      directory,
+      "--idle-grace-ms",
+      "1500",
+    ]);
+    if (
+      typeof created !== "object" ||
+      created === null ||
+      !("sessionId" in created) ||
+      typeof created.sessionId !== "string"
+    )
+      throw new Error("Missing created Session");
+    const sessionId = created.sessionId;
+    const result = await exec(
+      process.execPath,
+      [
+        cli,
+        "sessions",
+        "send",
+        created.sessionId.slice(0, 12),
+        "hello",
+        "--config",
+        file,
+        "--idle-grace-ms",
+        "1500",
+      ],
+      { env, timeout: 20000 },
+    );
+    expect(result.stdout.trim()).toBe("OK");
+    expect(result.stderr).toContain(`Session: ${created.sessionId}`);
+    const turnId = /^Turn: ([0-9a-f-]{36})$/mu.exec(result.stderr)?.[1];
+    expect(turnId).toBeDefined();
+    const observed = await command([
+      "turns",
+      "get",
+      "--session",
+      created.sessionId,
+      "--turn",
+      turnId ?? "",
+      "--config",
+      file,
+    ]);
+    expect(observed).toMatchObject({ state: "complete", response: "OK" });
+    const deleted = await command([
+      "sessions",
+      "delete",
+      created.sessionId.slice(0, 12),
+      "--yes",
+      "--config",
+      file,
+      "--idle-grace-ms",
+      "1500",
+    ]);
+    expect(deleted).toEqual({ sessionId: created.sessionId, deleted: true });
+    await released(config.dataDir);
+    const reader = new Store(
+      join(config.dataDir, "sessions.sqlite"),
+      undefined,
+      true,
+    );
+    try {
+      expect(reader.listSessions({ limit: 100 }).items).toEqual([]);
+      expect(() => reader.getSession(sessionId)).toThrow(
+        expect.objectContaining({ code: "session_not_found" }),
+      );
+    } finally {
+      reader.close();
+    }
+    await expect(stat(directory)).resolves.toBeDefined();
+  }, 30000);
   it("reports initialization failures and does not invent a replacement cancellation owner", async () => {
     const { config, file, directory } = await fixture();
     config.agents[0]!.env = {
@@ -269,7 +349,10 @@ describe("native managed service processes", () => {
         "--working-directory",
         directory,
       ]),
-    ).rejects.toMatchObject({ stderr: "credential unavailable\n" });
+    ).rejects.toMatchObject({
+      stderr:
+        '{"error":{"code":"credential_unavailable","message":"credential unavailable"}}\n',
+    });
     await released(config.dataDir);
     const store = new Store(join(config.dataDir, "sessions.sqlite"));
     const session = store.createSession("copilot", directory, "profile");
@@ -290,7 +373,10 @@ describe("native managed service processes", () => {
         "--turn",
         turn.turnId,
       ]),
-    ).rejects.toMatchObject({ stderr: "local work owner unavailable\n" });
+    ).rejects.toMatchObject({
+      stderr:
+        '{"error":{"code":"local_work_owner_unavailable","message":"local work owner unavailable"}}\n',
+    });
     expect(await readFile(join(config.dataDir, "sessions.sqlite"))).toEqual(
       before,
     );
@@ -434,7 +520,8 @@ describe("native managed service processes", () => {
         turnId,
       ]),
     ).rejects.toMatchObject({
-      stderr: "local work owner unavailable\n",
+      stderr:
+        '{"error":{"code":"local_work_owner_unavailable","message":"local work owner unavailable"}}\n',
     });
     await writeFile(prompt, "OK");
     const nextTurn = randomUUID();
@@ -505,7 +592,8 @@ describe("native managed service processes", () => {
         directory,
       ]),
     ).rejects.toMatchObject({
-      stderr: "fetch failed\n",
+      stderr:
+        '{"error":{"code":"operation_failed","message":"operation failed"}}\n',
     });
     await expect(stat(config.dataDir)).rejects.toMatchObject({
       code: "ENOENT",

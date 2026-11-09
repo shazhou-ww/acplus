@@ -285,6 +285,17 @@ export class Service {
     return this.store.createSession(agentId, canonical, agent.identity);
   }
 
+  deleteSession(sessionId: string): void {
+    this.assertReady();
+    const session = this.store.getSession(sessionId);
+    const agent = this.select(session.agentId);
+    if (agent.busy || agent.runtime.hasWork)
+      throw new ServiceError("agent_busy", 409);
+    this.store.deleteSession(sessionId);
+    for (const [key, binding] of this.bindings)
+      if (binding.sessionId === sessionId) this.bindings.delete(key);
+  }
+
   private track(work: Promise<void>): void {
     this.jobs.add(work);
     void work

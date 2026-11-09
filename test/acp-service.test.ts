@@ -152,6 +152,22 @@ async function settled(
 }
 
 describe("ACP service admission and failure boundaries", () => {
+  it("deletes local history without touching the workspace or starting an Agent, but rejects busy Agents", async () => {
+    const { service, session, root } = await setup();
+    const file = join(root, "keep.txt");
+    await writeFile(file, "keep");
+    service.select("copilot").busy = true;
+    expect(() => {
+      service.deleteSession(session.sessionId);
+    }).toThrow(expect.objectContaining({ code: "agent_busy" }));
+    service.select("copilot").busy = false;
+    service.deleteSession(session.sessionId);
+    expect(() => service.store.getSession(session.sessionId)).toThrow(
+      expect.objectContaining({ code: "session_not_found" }),
+    );
+    await expect(access(file)).resolves.toBeUndefined();
+    expect(state.attach).not.toHaveBeenCalled();
+  });
   it("chooses unrelated directories per Session and rechecks them before execution", async () => {
     const { service, session, root } = await setup();
     const other = await mkdtemp(join(tmpdir(), "acplus-session-directory-"));
