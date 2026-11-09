@@ -10,9 +10,17 @@ history over HTTP**.
 
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
-proxy, or a task queue. Previously published packages remain unchanged; this
-source cutover is **not an npm release**. Do not assume an existing registry
-Canary contains this implementation.
+proxy, or a task queue. Previously published AHP packages remain unchanged. The
+release candidate is `acplus@0.1.0-canary.20261109.1`, targeting npm `canary`;
+the reserved package's `latest` placeholder is not this runtime.
+
+After the release has passed registry and installation verification, install the
+exact Canary:
+
+```powershell
+pnpm add --global acplus@0.1.0-canary.20261109.1
+acplus --version
+```
 
 See [API](docs/API.md), [OpenAPI](docs/openapi.yaml), [CLI](docs/CLI.md),
 [Agent configuration](docs/AGENT-CONFIG.md),
@@ -195,9 +203,9 @@ the verified direct ACP entry; there is no permanent dual-stack launcher.
 Publishing is separate from this implementation. Use GitHub Trusted Publishing
 OIDC, never long-lived npm tokens:
 
-The renamed package is private until its new Trusted Publisher is configured and
-a release is explicitly approved. Confirm the acplus package settings use the
-repository below before removing the private flag.
+The private guard is removed for the explicitly approved Canary release. The
+acplus Trusted Publisher must use the repository below; validate it through the
+nonpublishing Actions diagnostic before pushing the release tag.
 
 - Organization/user: `shazhou-ww`
 - Repository: `acplus`
