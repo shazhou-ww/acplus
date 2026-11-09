@@ -1,203 +1,179 @@
-# AHP-native MVP API
+# ACP HTTP /v2 API
 
-Status: implemented legacy AHP `/v1` contract. The replacement `/v2` contract is
-planned in [ACP-DESIGN.md](ACP-DESIGN.md), not implemented here. The
-[requirements](REQUIREMENTS.md) and [invariants](../DESIGN-INVARIANTS.md) now
-describe that target. Real-provider acceptance is tracked separately in the
-Silvermoon idea. The [OpenAPI contract](openapi.yaml) is the machine-readable
-source; [HTML reference](api.html) is generated from it.
+This is the contract for the independent ACP entry. HTTP `/v2` uses the stable
+ACP **wire protocol v1**, not the SDK's experimental ACP v2 entry. The service
+owns local Session/Turn IDs and persists selected Agent events. All GET
+operations read SQLite or local runtime observations; they never start an Agent,
+authenticate, or fetch backend history.
 
-## Resource model
+## Resources and identity
 
 ```text
-Host -> Session -> Chat -> Turn
+configured Agent -> local Session -> Turns and ordered Events
 ```
 
-These are AHP concepts, not ahplex jobs. A Session is a working context; a Chat
-is a conversation thread; a Turn is one initiated execution cycle. No Task,
-project API, global resource aliases, or service-side queue.
+Session IDs are service-generated UUIDs. Turn IDs are caller-generated UUIDs,
+unique within a Session. Backend ACP Session IDs and profile bindings remain
+internal. `backendBound` means a binding was recorded, not that the backend is
+currently online or still has the conversation.
 
-Every host operation names `hostId`. Session/Chat values are their native AHP
-URIs, not an ahplex-generated ID mapped to another ID. Turn IDs are the actual
-protocol IDs. Resource identity is `(hostId, URI)`; a turn is identified by
-`(hostId, chat URI, turnId)`.
-
-Pass resource URIs in JSON or URL-encoded query values, not path segments. This
-avoids encoding slashes through HTTP gateways without inventing opaque aliases.
-The HTTP shape is a small projection, not a byte-for-byte JSON-RPC proxy.
+Every Event belongs to one Session and zero or one Turn in that same Session.
+Session/configuration/replay/late uncorrelated events have `turnId: null`. Do
+not treat a Turn as one model call: it may include multiple tool/model steps.
 
 ## Operations
 
-All paths start with `/v1`. Fourteen operations cover the required journeys. The
-count is a consequence of distinct needs, not a target to preserve from an
-earlier draft.
+All paths below are prefixed by `/v2`.
 
-| Method | Path                                           | Purpose / success response              |
-| ------ | ---------------------------------------------- | --------------------------------------- |
-| GET    | `/health`                                      | Service liveness; 204, no body          |
-| GET    | `/hosts`                                       | Configured host choices and state       |
-| POST   | `/hosts/{hostId}/start`                        | Start/connect; 202, no body             |
-| POST   | `/hosts/{hostId}/stop`                         | Stop owned process; 202, no body        |
-| POST   | `/hosts/{hostId}/auth`                         | Begin configured login; 202, no body    |
-| GET    | `/hosts/{hostId}/auth`                         | Login progress and next action          |
-| POST   | `/hosts/{hostId}/auth/input`                   | Answer login step; 202, no body         |
-| GET    | `/hosts/{hostId}/sessions`                     | Native session summaries                |
-| POST   | `/hosts/{hostId}/sessions`                     | Create Session; 201, `{resource}`       |
-| GET    | `/hosts/{hostId}/chats?session=<uri>`          | `{defaultChat?, chats}`                 |
-| POST   | `/hosts/{hostId}/chats`                        | Create ordinary Chat; 201, `{resource}` |
-| POST   | `/hosts/{hostId}/turns`                        | Start Turn; 202, no body                |
-| GET    | `/hosts/{hostId}/turns?chat=<uri>&turnId=<id>` | Exact Turn observation                  |
-| POST   | `/hosts/{hostId}/turns/cancel`                 | Cancel exact Turn; 202, no body         |
+| Method | Path                                                          | Result                                                          |
+| ------ | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| GET    | `/health`                                                     | 204 after a local store readiness query                         |
+| GET    | `/agents`                                                     | configured choices, local runtime state and cached observations |
+| GET    | `/agents/{agentId}/auth`                                      | sanitized cached auth and active-flow progress                  |
+| POST   | `/agents/{agentId}/auth`                                      | 202, explicit login flow                                        |
+| POST   | `/agents/{agentId}/auth/input`                                | 202, exact non-secret storage-consent step                      |
+| POST   | `/agents/{agentId}/auth/logout`                               | 202 on supported upstream logout                                |
+| POST   | `/sessions`                                                   | 201, local Session only                                         |
+| GET    | `/sessions?agentId=...&cursor=...&limit=...`                  | local catalogue page                                            |
+| GET    | `/sessions/{sessionId}`                                       | local metadata and history coverage                             |
+| GET    | `/sessions/{sessionId}/events?turnId=...&after=...&limit=...` | ordered durable event page                                      |
+| POST   | `/sessions/{sessionId}/turns`                                 | 202, durable admission or identical existing Turn               |
+| GET    | `/sessions/{sessionId}/turns?cursor=...&limit=...`            | local Turn page                                                 |
+| GET    | `/sessions/{sessionId}/turns/{turnId}`                        | persisted execution observation                                 |
+| POST   | `/sessions/{sessionId}/turns/{turnId}/cancel`                 | 202, exact cancellation                                         |
 
-### Payload discipline
+See [OpenAPI](openapi.yaml) for the machine contract. Requests require
+`application/json`, exact allowed fields, and at most 1 MiB. Unknown/repeated
+query parameters fail explicitly. Responses use `Cache-Control: no-store`; the
+service-side durable store is distinct from browser/proxy HTTP caching.
 
-- Host: `hostId`, `status`; providers only when ready, configured authMethods
-  only when present, and error on failure. No model catalogue or internal PIDs.
-- Session: `resource`, `title`, `provider`. Title identifies a human
-  conversation context without returning its transcript or workspace
-  configuration.
-- Chat: `resource`, `title`, optional `origin` and `interactivity`. Catalogue
-  `defaultChat` comes directly from the Session; no invented `isMain` field.
-- Turn: `state`, optional `text`, `inputRequired`, and `error`. No echoed IDs,
-  timestamp, usage, prompt copy, task result object, or raw tool content.
-- Errors: `{error: {code, message}}`; no generic retryability claim.
+## Session creation and execution
 
-Known provenance is forwarded as `user`, `fork`/`sideChat` with source
-chat/turn, or `tool` with source chat/toolCallId. This does not expose a
-complete internal hierarchy. Missing provenance remains absent. Missing
-interactivity means full according to AHP. Default-chat membership is
-independent of origin.
-
-## Smallest useful execution
-
-1. List hosts, then start the selected host when discovery is needed.
-2. If upstream authentication is required, complete the host's configured
-   method.
-3. List sessions or create one with:
-
-   ```json
-   {
-     "provider": "copilotcli",
-     "workingDirectories": ["file:///D:/work/demo"]
-   }
-   ```
-
-4. List that Session's chats. Use its explicit defaultChat or select a writable
-   chat. If desired and supported, create an ordinary chat with
-   `{session: uri}`. Never assume the first chat is default or substitute a new
-   Session for Chat creation. The MVP does not request fork/sideChat creation.
-5. Choose a fresh turn ID before sending:
-
-   ```json
-   {
-     "chat": "ahp-chat:/example",
-     "turnId": "99888d8a-73d2-48dd-9a7f-d650388704f9",
-     "text": "Explain the entry point."
-   }
-   ```
-
-6. Poll that chat/turn ID, or send `{chat, turnId}` to `/turns/cancel`.
-
-Session creation confirms allocation through RPC and native snapshots. VS Code
-may retain `lifecycle=creating` until first-send provider materialization.
-Returning 201 does not invent a ready lifecycle or send a probe turn; allocated
-Chats remain discoverable before that first execution.
-
-Client-chosen turn IDs are native AHP identifiers, not a second idempotency
-protocol. They let a caller query an ambiguous submission even if its HTTP
-response is lost. No automatic replay is promised; an observed existing ID is a
-conflict, not permission to rerun it.
-
-## Admission and observation
-
-One active turn per Chat; busy input returns `409 chat_busy` without dispatch.
-Admission is serialized per Chat, and host rejections still prevail after local
-checks. Different chats can execute concurrently when the provider permits.
-There is no `queued` state and no ahplex Task registry.
-
-`running` is the HTTP projection of `ChatState.activeTurn`; completed states
-retain AHP's `complete`, `cancelled`, and `error`. Text is a minimal
-concatenation of markdown response parts, not the whole structured transcript.
-Known user-input or tool-approval blocks add `inputRequired: true`. Answering
-those blocks is not implemented by this MVP; the caller can cancel rather than
-wait blindly.
-
-A disconnected/unobservable host returns an HTTP error, not a fabricated Turn
-state. An ambiguous dispatch uses `502 turn_outcome_unknown`; later reads query
-the same native ID. Do not admit further writes to that chat until the ambiguity
-is reconciled. A cancellation must never target a different active turn.
-
-Read from activeTurn or retained/fetched history. Incomplete history is not
-proof of absence: return `503 turn_state_unavailable` when it cannot be
-resolved. Only confirmed absence returns 404. Host-side durability is
-host-dependent; ahplex adds no durable turn store or background recovery
-scheduler.
-
-## Host lifecycle and login
-
-All hosts come from static configuration and are started/stopped by ahplex. GET
-never launches a process or login. Resource reads require a ready connection;
-unavailability is an error, not an empty/stale aggregate. POST operations can
-prepare the selected host when its onDemand configuration permits.
-
-Concurrent starts coalesce. Stop rejects active work/authentication and unknown
-host activity; no force-stop. Host failures are independent. Service health does
-not require every host to be ready, and protocol readiness does not imply login.
-
-Authentication selects `{methodId}` from that host's configured choices. Poll
-`/auth`: a link step exposes `{kind: "link", url, userCode?}`; an input step
-exposes `{kind: "input", stepId, fields}`. Submit exact requested values with
-stepId. A finite attempt expiry releases its owned commands/resources.
-
-One active attempt per host; no flow resources, history, global account, or
-global logout. The caller handles user interaction; the adapter handles OAuth/
-command/protocol specifics and actual success verification. Tokens are never
-status output. Stale input and stale connection-bound success are rejected.
-
-The built-in `github-cli` method uses these same endpoints, without adding a
-login resource or account API. A configured `login` method returns the official
-GitHub CLI device link/code; a configured `reuse` method verifies the same
-explicit profile/account and binds its token to that selected Host connection.
-Clients never submit a password or token for this method. See the
-[dedicated-runtime configuration](HOST-CONFIG.md#official-github-cli-handoff).
-Start login on the first host, wait for `succeeded`, then explicitly begin reuse
-on the second configured host. No unbound host receives credentials.
-
-After reconnect or an upstream authentication challenge, `idle` means the old
-success is no longer usable evidence; explicitly begin reuse, or login if its
-credential is missing/expired/rejected. Known expiry during verification cannot
-become success. `auth_profile_busy` rejects concurrent use of one CLI profile;
-`auth_cli_account_unavailable` and `auth_cli_credential_source` indicate a
-missing/rejected account or unexpected credential source without revealing raw
-diagnostics. CLI failures/timeouts never produce successful authentication. The
-normal ten-minute attempt deadline applies. A successful login is still not
-evidence of a completed Turn: submit and observe the exact native ID.
-
-## Explicit non-goals
-
-Queueing, scheduled work, global session catalogues, task abstractions, model
-selection, attachments, transcript streaming, tool approvals, fork/sideChat
-creation, moving/deleting resources, dynamic host registration, generic RPC
-passthrough, and exactly-once or durable recovery guarantees.
-
-The service owns no inbound identity or access-control system; deployment
-gateways provide it. Upstream auth errors use 409, not an inbound-login 401.
-Responses use `Cache-Control: no-store`; gateways must not log authentication
-input bodies. Lists must not silently truncate.
-
-## Generate the reference
-
-Run from the repository root:
-
-```powershell
-npm exec --yes --package=@redocly/cli@2.0.0 -- redocly lint docs\openapi.yaml --extends minimal
-npm exec --yes --package=@redocly/cli@2.0.0 -- redocly bundle docs\openapi.yaml --output docs\.openapi.bundle.json
-if ($LASTEXITCODE -eq 0) {
-  node docs\render-api-docs.js docs\.openapi.bundle.json docs\api.html
+```json
+{
+  "agentId": "copilot",
+  "workingDirectory": "/srv/work/project"
 }
-Remove-Item -LiteralPath docs\.openapi.bundle.json
 ```
 
-The HTML embeds the contract and uses a pinned ReDoc CDN script. It needs
-JavaScript/network access, but no ahplex or Host process. It is reference
-documentation, not an operational Web UI.
+Creation validates the configured Agent and canonical allowed workspace and
+persists a Session without spawning. No synthetic Chat is created.
+
+Submit to `/sessions/{sessionId}/turns`:
+
+```json
+{
+  "turnId": "b5a2e47f-00cd-4af8-8178-88015beac5f0",
+  "text": "Explain the entry point. Do not modify files."
+}
+```
+
+HTTP 202 means admission was committed before background execution begins. It
+does not promise startup, authorization, model success, or completion. The first
+Turn starts/initializes the Agent and creates its ACP Session. Subsequent Turns
+reuse the bound Session or negotiated resume/load support.
+
+One active prompt is admitted per configured Agent and per Session. Busy input
+is rejected, not queued. A backend may still reject an admitted Turn during
+preflight; query that exact Turn for the resulting observation. Identical IDs
+and original text return the existing Turn without dispatch; changed text
+returns `409 turn_id_conflict`.
+
+States are `accepted`, `starting`, `dispatching`, `running`, `cancelling`,
+`complete`, `cancelled`, `error`, and `unknown`. `response` concatenates only
+Agent text chunks; selected tool/configuration content remains typed Events.
+Stop reasons are preserved. `complete` means execution ended, not that its
+requested task succeeded; refusals and limits must be interpreted separately.
+
+Before the actual RPC handoff, an undispatched Turn can be cancelled locally.
+After handoff, cancellation waits for the pending prompt's real terminal
+evidence. A late normal completion remains normal completion. Unknown outcomes
+cannot be cancelled as if their active work were known, and they block
+conflicting execution without an automatic replay.
+
+## Event filtering and pagination
+
+`turnId` is optional. Omit it for all Session events, including unassigned
+events. Supply it to select only that Session's matching Turn; a missing or
+cross-Session Turn returns 404, while a known Turn with no matching events
+returns an empty page.
+
+Filtering happens before limiting. `after` is an exclusive cursor over the
+Session-wide committed sequence, not a filtered-row index. Sparse sequences are
+normal. Limits default to 100 and range from 1 to 1,000. Keep the filter
+unchanged when paging:
+
+```text
+GET /v2/sessions/{sessionId}/events?turnId={turnId}&after=42&limit=100
+```
+
+`nextAfter` indicates more currently matching records. For later polling, retain
+the last returned sequence or the Session watermark `lastSequence`. An empty
+current page does not prove that a running Turn will emit no more events.
+Catalogue cursors are opaque and scoped; do not synthesize offsets.
+
+Records expose observation time, sequence, and coverage. Local records describe
+what this service observed, not every action ever performed by the Agent.
+Replayed history is separately sourced, with no invented local Turn association.
+A complete current Turn does not establish complete historical Session coverage.
+
+## Authentication
+
+Authentication endpoints require operator authorization at the external gateway.
+Ordinary execution requests do not carry provider tokens.
+
+Begin with `{"methodId":"native-login"}` for the configured Copilot adapter, or
+an advertised Agent-driven method. Inspect GET auth for public device URL/code
+and exact input steps. POST auth/input accepts only:
+
+```json
+{
+  "stepId": "COPY-THE-EXACT-STEP-ID",
+  "values": { "confirmPlaintextStorage": "yes" }
+}
+```
+
+It is not a password/token ingestion endpoint. Raw terminal login output is not
+returned or persisted. Copilot terminal login is a Linux-specific adapter using
+util-linux `script`; unsupported terminal/Agent methods fail explicitly. ACP
+Agent-driven methods use `authenticate(methodId)`; terminal methods use a
+separate configured program and reconnect, never that RPC.
+
+GET auth returns `lastKnownStatus`, `verifiedAt`, known `expiresAt` or null,
+`freshness`, evidence/invalidation reason, sanitized methods and an ephemeral
+flow. Past success is not a perpetual guarantee. Restart, reconnect, explicit
+login/logout, profile changes, challenges, and known expiry invalidate current
+evidence. There is no hidden paid verification request. Unknown activity blocks
+conflicting authentication when the runtime has actually observed uncertain
+work; missing generic activity capabilities alone do not make a fresh
+login/logout impossible.
+
+## Recovery, ownership and limits
+
+SQLite schema 2 is independent of configuration schema 2. Unshipped older
+development databases are explicitly rejected, not silently reinterpreted. Use a
+fresh private data root for cutover; no legacy AHP import is automatic.
+
+On restart, undispatched `accepted`/`starting` records terminate as not
+dispatched; records with unresolved dispatch intent become `unknown`. Cache
+reads remain available with the Agent executable absent. Backend continuation
+uses only advertised resume/load support; absence yields
+`session_resume_unsupported`. Loading history is not proof of an interrupted
+prompt's outcome.
+
+Known ambiguous background work is fenced before another same-Session prompt.
+Generic ACP does not identify every undisclosed late background output. No
+synthetic completion, prompt identity, or background-job API is promised.
+Automatic idle exit requires known quiescence; default idle timeout is disabled.
+Explicit service shutdown closes only owned processes.
+
+Profile leases exclude cooperating service runtimes across data roots. They
+never copy credentials or automatically clear stale ownership files.
+Paths/policy are not an OS sandbox. Keep credential profiles outside trusted
+workspaces and use a dedicated OS account/container for stronger protection.
+This is a private service, not a built-in multi-tenant identity/authorization
+system; the gateway must protect Session/history resources and Agent use.
+
+Failures use `{ "error": { "code": "...", "message": "..." } }` and meaningful
+HTTP status. Storage failures do not become empty history or a claimed
+completion. No write is automatically retried.

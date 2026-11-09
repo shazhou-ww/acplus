@@ -1,8 +1,8 @@
 # ACP HTTP service requirements
 
-Status: target requirements approved for redesign, not implemented behavior. The
-current package implements the legacy AHP `/v1` API documented in
-[API.md](API.md). The [ACP design](ACP-DESIGN.md) defines the replacement.
+Status: implemented repository requirements for the direct ACP `/v2` entry, not
+an npm release. See [API.md](API.md) and the [ACP design](ACP-DESIGN.md);
+published legacy packages remain unchanged.
 
 ## Product
 
@@ -115,8 +115,8 @@ only owned processes and preserve uncertainty on interrupted execution.
 
 - Keep one ESM TypeScript package, `src/index.ts` public exports, `test/` tests,
   `dist/` generated files, and the package exports/files shape.
-- Use the official ACP SDK and a private local persistent store; SQLite is the
-  proposed implementation, not a running external database dependency.
+- Use the official ACP SDK and the private `node:sqlite` store, with explicit
+  schema checks and no external database dependency.
 - One service owns its data root; separate configurations cannot share active
   Agent credential profiles.
 - External gateways provide inbound authentication, authorization, and TLS.

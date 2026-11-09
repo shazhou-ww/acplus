@@ -1,5 +1,9 @@
 # Prepare the pinned external Linux runtime
 
+Historical AHP-only instructions: the current source no longer uses AHPD. Use
+[Agent configuration](AGENT-CONFIG.md) for direct ACP. These commands apply only
+to the older AHP package and its recorded acceptance, not the new entry.
+
 AHPlex does not install AHPD, ACP or Copilot. Follow the
 source-to-local-tarballs commands in the
 [README quickstart](../README.md#prepare-an-external-runtime-then-initialize-locally).

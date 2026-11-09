@@ -1,9 +1,9 @@
 # ACP design invariants
 
-Status: target implementation contract, not a description of current `/v1`
-behavior. These invariants and the [requirements](docs/REQUIREMENTS.md) govern
-the [ACP redesign](docs/ACP-DESIGN.md). The existing AHP implementation remains
-unchanged until the tested `/v2` cutover.
+Status: implementation contract for the direct ACP `/v2` repository entry. These
+invariants and the [requirements](docs/REQUIREMENTS.md) govern the
+[ACP design](docs/ACP-DESIGN.md). The legacy source entry was replaced only
+after independent-entry verification; published packages are unchanged.
 
 ## 1. HTTP resources belong to the service
 

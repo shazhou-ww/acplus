@@ -2,8 +2,10 @@
 
 English | [简体中文](ACP-DESIGN.zh-CN.md)
 
-Status: approved direction and implementation plan, not implemented behavior.
-The existing package still implements the legacy AHP `/v1` API.
+Status: implemented repository design, not an npm release. The normal entry uses
+direct ACP `/v2` after independent-entry validation. Published legacy packages
+are unchanged; implementation and deployment evidence are tracked separately
+from this document.
 
 ## Silvermoon design work
 
@@ -12,12 +14,12 @@ This direction is tracked by the repository-owned
 Its
 [supporting design decisions](../.silvermoon/ideas/01M6ZA9HR2B1A5H9QYVRN0CKX0/outer/inner/ideal/Design-decisions.md)
 explain the product choices and link back to the detailed project documents. Its
-Ideal World defines outcomes and boundaries; this document remains the detailed
-design draft, not evidence of lifecycle acceptance or implementation. After the
-ideal gate, refine the Inner World contract and export agreed details into this
-document, its Chinese edition, root requirements/invariants, and HTTP/OpenAPI,
-CLI, and configuration documentation. Keep each exported contract consistent and
-explicitly distinguish planned behavior from shipped behavior.
+Ideal World defines outcomes and boundaries; this document is the detailed
+design contract, not evidence of lifecycle acceptance by itself. Refine the
+Inner World contract and export agreed details into this document, its Chinese
+edition, root requirements/invariants, and HTTP/OpenAPI, CLI, and configuration
+documentation. Keep each exported contract consistent and explicitly distinguish
+planned behavior from shipped behavior.
 
 ## Decisions
 
@@ -63,10 +65,10 @@ handwritten JSON-RPC. Start with Copilot CLI as the verified integration. Other
 ACP Agents require their own initialization, authentication, tool-policy, and
 restart tests; a working CLI or a protocol name is not sufficient evidence.
 
-SQLite is the proposed local store: one database under the private `dataDir`,
-one service writer, schema migrations, transactions, and indexed pagination.
-Evaluate `node:sqlite` against the supported Node minimum before selecting the
-implementation; do not add an ORM or database server by default.
+SQLite via `node:sqlite` is the implemented local store: one database under the
+private `dataDir`, one service writer, explicit schema-version checks,
+transactions, and indexed pagination. No ORM or external database server is
+required. Earlier unshipped schema-1 development databases are rejected.
 
 ## Configuration and ownership
 
@@ -290,7 +292,7 @@ Submission: `{"turnId":"<uuid>","text":"Explain the entry point"}`. Use local
 IDs in path segments, not backend ACP IDs. Responses include local identity and
 observation metadata. Event pagination defaults to 100 records, caps at 1,000,
 and follows committed sequence cursors with no duplicates/skips. These bounds
-are proposed API constants, not runtime claims.
+are implemented API constants, verified by pagination tests.
 
 The event endpoint accepts an optional `turnId` filter:
 
@@ -444,9 +446,9 @@ device-login parsing where their semantics fit. Replace `NativeHost`,
 AHP authentication submission. Do not keep a dual-protocol abstraction merely to
 preserve dead code.
 
-This design-only change does not remove code or change dependencies. During
-implementation remove `@microsoft/agent-host-protocol` and the AHP-specific
-runtime after ACP acceptance, use the ACP SDK, and update public types through
+The verified independent entry has been promoted. The implementation removes
+`@microsoft/agent-host-protocol` and the legacy runtime, uses the stable v1
+entry of `@agentclientprotocol/sdk`, and exports public types through
 `src/index.ts` while preserving the exports map and package files allowlist.
 Keep old AHP verification evidence explicitly historical, not ACP acceptance.
 

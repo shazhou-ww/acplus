@@ -1,10 +1,10 @@
 {
   "name": "ahplex",
   "version": "0.1.1-canary.20261106.1",
-  "description": "Owned AHP hosts, authentication, sessions, chats, and turns over HTTP.",
+  "description": "On-demand ACP Agents and durable Session history over HTTP.",
   "keywords": [
     "agent",
-    "vscode",
+    "acp",
     "http"
   ],
   "homepage": "https://github.com/shazhou-ww/ahplex#readme",
@@ -20,7 +20,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "ahplex": "dist/cli.js"
+    "ahplex": "dist/acp-cli.js"
   },
   "exports": {
     ".": {
@@ -58,13 +58,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@microsoft/agent-host-protocol": "1.0.0",
+    "@agentclientprotocol/sdk": "2.4.0",
     "ajv": "^8.17.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.5",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.4",
     "eslint": "^10.12.0",
     "globals": "^17.13.0",

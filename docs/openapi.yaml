@@ -1,118 +1,72 @@
 openapi: 3.1.0
 info:
-  title: ahplex HTTP API
-  version: 0.1.0-design
-  summary: Owned AHP hosts, authentication, Sessions, Chats, and Turns.
+  title: AHPlex ACP HTTP /v2 API
+  version: "2"
   description: |
-    Implemented MVP contract; real-provider acceptance is tracked separately.
-    Use native AHP resource identities:
-    Session/Chat URIs and actual turn IDs, always scoped to a configured host.
-    There are no Task resources, execution queues, or global resource aliases.
-    URI-valued query parameters must be URL-encoded; JSON bodies carry raw URIs.
-
-    All hosts are owned by ahplex. GET never starts processes or login. Host
-    reads require a ready connection and return errors rather than stale or
-    fabricated empty catalogues. POST resource operations may prepare a host
-    when onDemand permits; reads otherwise return 503 host_not_ready.
-
-    An external gateway owns inbound access control. Responses use Cache-Control:
-    no-store. No durable execution store, write retry, or exactly-once delivery
-    is promised. A connection failure is not a turn outcome.
-  license:
-    name: MIT
-    identifier: MIT
-servers:
-  - url: /v1
+    Direct ACP Agents with durable local Session history.
+    All GET operations and Session creation avoid Agent startup.
+    Agent authentication routes require operator authorization at the external gateway.
+    This contract describes the private backend with no built-in inbound identity;
+    external gateways must add resource authorization and TLS.
 security: []
-tags:
-  - name: Hosts
-    description: Registered hosts and their owned process lifecycle.
-  - name: Authentication
-    description: Upstream login bridge; one active attempt per host.
-  - name: Sessions
-    description: AHP working contexts, not projects or conversation threads.
-  - name: Chats
-    description: AHP conversation threads within a Session.
-  - name: Turns
-    description: Exact executions within a Chat; no service queue.
+servers:
+  - url: http://127.0.0.1:4280
 paths:
-  /health:
+  /v2/health:
     get:
-      operationId: getHealth
-      tags: [Hosts]
-      summary: Check service liveness
+      operationId: health
+      summary: Check local service and storage readiness
       responses:
         "204":
-          description:
-            The HTTP service is serving. Individual hosts may be idle or failed.
+          description: HTTP service and initialized store are available
         default:
           $ref: "#/components/responses/Error"
-  /hosts:
+  /v2/agents:
     get:
-      operationId: listHosts
-      tags: [Hosts]
-      summary: List configured hosts and connection choices
+      operationId: listAgents
+      summary: List configured Agents and cached observations
       responses:
         "200":
-          description:
-            All registered hosts; no process startup or login is triggered.
+          description: Static Agent choices and local observations
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Host"
+                  type: object
+                  properties:
+                    agentId:
+                      type: string
+                    label:
+                      type: string
+                    runtime:
+                      type: string
+                    capabilities: {}
+                    capabilitiesObservedAt:
+                      type: [string, "null"]
+                    auth:
+                      $ref: "#/components/schemas/Auth"
         default:
           $ref: "#/components/responses/Error"
-  /hosts/{hostId}/start:
+  /v2/agents/{agentId}/auth:
     parameters:
-      - $ref: "#/components/parameters/HostId"
-    post:
-      operationId: startHost
-      tags: [Hosts]
-      summary: Start and connect an owned host
-      description: |
-        Concurrent starts coalesce. Already-ready hosts are unchanged.
-        A stopping host returns 409 host_stopping. Poll /hosts for ready or failed;
-        ready means protocol/discovery readiness, not provider authentication.
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      operationId: getAuthentication
+      summary: Read local authentication observations and flow progress
       responses:
-        "202":
-          description: Startup accepted. No body.
-        default:
-          $ref: "#/components/responses/Error"
-  /hosts/{hostId}/stop:
-    parameters:
-      - $ref: "#/components/parameters/HostId"
-    post:
-      operationId: stopHost
-      tags: [Hosts]
-      summary: Disconnect and stop an owned host
-      description: |
-        Reject with 409 host_busy while authentication or host work is active.
-        Reject with 409 host_activity_unknown when activity or a previously
-        dispatched turn's outcome cannot be established. Stop admission atomically
-        before cleanup. No force-stop; no unrelated process termination.
-        Poll /hosts for idle or failed. Reconnect must not undo intentional stop.
-      responses:
-        "202":
+        "200":
           description:
-            Stop accepted; an already-idle host is unchanged. No body.
+            Local sanitized observation and expiring active-flow progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Auth"
         default:
           $ref: "#/components/responses/Error"
-  /hosts/{hostId}/auth:
-    parameters:
-      - $ref: "#/components/parameters/HostId"
     post:
       operationId: beginAuthentication
-      tags: [Authentication]
-      summary: Start the selected configured authentication method
-      description: |
-        methodId identifies a host-local binding including provider and resource.
-        No caller-supplied commands, OAuth settings, or callback destinations.
-        One active attempt per host; concurrent starts return 409 auth_in_progress.
-        A new attempt after completion replaces the last status. Attempts have a
-        finite adapter-enforced expiry and cleanup deadline. Transport login may
-        precede connection; other methods may prepare the host if configured.
+      summary: Begin an explicit Agent authentication flow
       requestBody:
         required: true
         content:
@@ -127,40 +81,19 @@ paths:
                   minLength: 1
       responses:
         "202":
-          description: Login accepted; poll this URL for progress. No body.
-        default:
-          $ref: "#/components/responses/Error"
-    get:
-      operationId: getAuthentication
-      tags: [Authentication]
-      summary: Read the current or last authentication attempt
-      description: |
-        A shared status slot, not a flow history or credential inventory.
-        idle is not evidence that no authentication is required. Clear stale
-        success on known expiry or connection replacement. Callers coordinate
-        host login. Never return tokens, OAuth device_code, or command stdout.
-      responses:
-        "200":
-          description:
-            Only the selected method, progress, and actionable step or error.
+          description: Explicit authentication operation admitted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Authentication"
+                $ref: "#/components/schemas/AuthFlow"
         default:
           $ref: "#/components/responses/Error"
-  /hosts/{hostId}/auth/input:
+  /v2/agents/{agentId}/auth/input:
     parameters:
-      - $ref: "#/components/parameters/HostId"
+      - $ref: "#/components/parameters/AgentId"
     post:
-      operationId: submitAuthenticationInput
-      tags: [Authentication]
-      summary: Answer the current login step
-      description: |
-        stepId must match the current input step; field names must exactly match
-        its fields. Reject stale steps with 409 auth_step_mismatch. Step IDs are
-        never reused between attempts. Inputs are write-only and excluded from
-        service/gateway logs. The adapter validates OAuth state and callback binding.
+      operationId: answerAuthenticationInput
+      summary: Answer an exact non-secret authentication step
       requestBody:
         required: true
         content:
@@ -172,131 +105,62 @@ paths:
               properties:
                 stepId:
                   type: string
-                  minLength: 1
                 values:
                   type: object
-                  minProperties: 1
-                  writeOnly: true
-                  additionalProperties:
-                    type: string
+                  additionalProperties: false
+                  required: [confirmPlaintextStorage]
+                  properties:
+                    confirmPlaintextStorage:
+                      enum: [yes, no]
       responses:
         "202":
-          description: Input accepted, not proof of login. No body.
+          description: Exact non-secret input step answered
         default:
           $ref: "#/components/responses/Error"
-  /hosts/{hostId}/sessions:
+  /v2/agents/{agentId}/auth/logout:
     parameters:
-      - $ref: "#/components/parameters/HostId"
+      - $ref: "#/components/parameters/AgentId"
+    post:
+      operationId: logout
+      summary: Request supported upstream logout
+      requestBody:
+        $ref: "#/components/requestBodies/Empty"
+      responses:
+        "202":
+          description: Supported explicit upstream logout completed
+        default:
+          $ref: "#/components/responses/Error"
+  /v2/sessions:
     get:
       operationId: listSessions
-      tags: [Sessions]
-      summary: List a ready host's sessions
-      description: |
-        Read the host catalogue and retain empty sessions successfully created by
-        this service even before catalogue visibility. No global session registry
-        or cross-host snapshot. No silent truncation; failure to obtain the
-        catalogue is an error, not an empty result.
-      responses:
-        "200":
-          description: Minimal native session summaries.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Session"
-        default:
-          $ref: "#/components/responses/Error"
-    post:
-      operationId: createSession
-      tags: [Sessions]
-      summary: Create an AHP session
-      description: |
-        ahplex chooses the native session URI and calls AHP createSession.
-        Confirm the allocation via the successful RPC and native resource
-        snapshots before returning 201. A host may keep a provisional session at
-        lifecycle=creating until its first turn; 201 does not claim provider
-        materialization or start a turn. On-demand preparation follows host
-        configuration; login is explicit.
-        No automatic retry after ambiguous creation (502 creation_outcome_unknown).
-        MVP supports one directory, using the native workingDirectories field.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [provider, workingDirectories]
-              properties:
-                provider:
-                  type: string
-                  minLength: 1
-                workingDirectories:
-                  type: array
-                  minItems: 1
-                  maxItems: 1
-                  items:
-                    type: string
-                    format: uri
-                  description:
-                    One absolute file URI on the host, not a local HTTP-client
-                    path.
-      responses:
-        "201":
-          $ref: "#/components/responses/CreatedResource"
-        default:
-          $ref: "#/components/responses/Error"
-  /hosts/{hostId}/chats:
-    parameters:
-      - $ref: "#/components/parameters/HostId"
-    get:
-      operationId: listChats
-      tags: [Chats]
-      summary: Read a session's chats and defaultChat
+      summary: List persisted local Sessions
       parameters:
-        - name: session
+        - name: agentId
           in: query
-          required: true
-          description: Native AHP session URI, URL-encoded as a query value.
           schema:
             type: string
-            format: uri
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
       responses:
         "200":
-          description:
-            Native session chat catalogue, not a fabricated parent/child
-            hierarchy.
+          description: Local Session catalogue
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties: false
-                required: [chats]
+                required: [items, nextCursor]
                 properties:
-                  defaultChat:
-                    type: string
-                    format: uri
-                    description:
-                      Forward only if the host supplies it; do not infer from
-                      list order.
-                  chats:
+                  items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Chat"
+                      $ref: "#/components/schemas/Session"
+                  nextCursor:
+                    type: [string, "null"]
         default:
           $ref: "#/components/responses/Error"
     post:
-      operationId: createChat
-      tags: [Chats]
-      summary: Create an ordinary chat in an existing session
-      description: |
-        Requires the selected provider's AHP multipleChats capability; otherwise
-        return 409 capability_unsupported. Do not substitute a new Session.
-        ahplex chooses the native chat URI and calls createChat with no source
-        or initial message. No fork/sideChat options; no defaultChat reassignment.
-        Confirm creation before returning 201. A read-only/hidden existing chat
-        does not prevent creating a separate ordinary chat if the host allows it.
+      operationId: createSession
+      summary: Create a local Session without starting an Agent
       requestBody:
         required: true
         content:
@@ -304,360 +168,426 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [session]
+              required: [agentId, workingDirectory]
               properties:
-                session:
-                  type: string
-                  format: uri
-      responses:
-        "201":
-          $ref: "#/components/responses/CreatedResource"
-        default:
-          $ref: "#/components/responses/Error"
-  /hosts/{hostId}/turns:
-    parameters:
-      - $ref: "#/components/parameters/HostId"
-    post:
-      operationId: startTurn
-      tags: [Turns]
-      summary: Start one native turn in an idle, writable chat
-      description: |
-        Caller chooses turnId before dispatch, as AHP permits. It is the actual
-        protocol turn ID, not an idempotency key or a second job ID.
-        Send chat/turnStarted to the explicit chat with a user-origin message.
-        Reject a busy chat with 409 chat_busy; never queue. Reject read-only or
-        hidden chats with 409 chat_not_interactive; absent interactivity means full.
-        Serialize admission per chat and honor host rejection after local checks.
-
-        Return 202 only after host acceptance, not turn completion. If dispatch
-        outcome is uncertain, return 502 turn_outcome_unknown; the caller can
-        inspect that same chat/turnId. Never replay it automatically or target
-        a different/default chat. A known existing turnId returns 409 turn_exists,
-        not another execution. Unresolved prior dispatch blocks further admission.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [chat, turnId, text]
-              properties:
-                chat:
-                  type: string
-                  format: uri
-                turnId:
+                agentId:
                   type: string
                   minLength: 1
+                workingDirectory:
+                  type: string
                   description:
-                    Fresh caller-chosen AHP turn ID; a UUID is recommended.
+                    Absolute host directory within configured workspace roots
+      responses:
+        "201":
+          description:
+            Persisted local Session; no backend process or Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        default:
+          $ref: "#/components/responses/Error"
+  /v2/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getSession
+      summary: Read persisted Session metadata
+      responses:
+        "200":
+          description: Local Session metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        default:
+          $ref: "#/components/responses/Error"
+  /v2/sessions/{sessionId}/events:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: listEvents
+      summary: Read ordered events with optional Turn filtering
+      parameters:
+        - name: turnId
+          in: query
+          description:
+            Optional exact Turn in this Session; excludes unassigned events
+          schema:
+            type: string
+            format: uuid
+        - name: after
+          in: query
+          description:
+            Exclusive Session-wide sequence cursor; filtering never renumbers
+            events
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+            default: 0
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description:
+            Filtered before limiting; unknown or cross-Session Turn is 404
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextAfter, lastSequence, observedAt, coverage]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Event"
+                  nextAfter:
+                    type: [integer, "null"]
+                  lastSequence:
+                    type: integer
+                  observedAt:
+                    type: string
+                  coverage:
+                    $ref: "#/components/schemas/Coverage"
+        default:
+          $ref: "#/components/responses/Error"
+  /v2/sessions/{sessionId}/turns:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: listTurns
+      summary: List persisted Turn observations
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Local Turn catalogue
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Turn"
+                  nextCursor:
+                    type: [string, "null"]
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: submitTurn
+      summary: Durably admit one identified prompt execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [turnId, text]
+              properties:
+                turnId:
+                  type: string
+                  format: uuid
                 text:
                   type: string
                   minLength: 1
       responses:
         "202":
           description:
-            The turn was accepted. Caller already knows turnId; no body.
-        default:
-          $ref: "#/components/responses/Error"
-    get:
-      operationId: getTurn
-      tags: [Turns]
-      summary: Read the exact turn's observed state and text
-      parameters:
-        - name: chat
-          in: query
-          required: true
-          schema:
-            type: string
-            format: uri
-        - name: turnId
-          in: query
-          required: true
-          schema:
-            type: string
-            minLength: 1
-      description: |
-        Inspect this chat's activeTurn or completed turns, fetching older turns
-        through AHP when supported and necessary. Never substitute the latest turn.
-        Return 404 only when absence is established; an incomplete history window
-        or unavailable connection returns 503 turn_state_unavailable.
-        No durable ahplex copy or generic transcript/history API is implied.
-      responses:
-        "200":
-          description:
-            Small projection of AHP state; never an invented queued or failed
-            task.
+            Durable admission, or identical existing submission without
+            redispatch
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Turn"
         default:
           $ref: "#/components/responses/Error"
-  /hosts/{hostId}/turns/cancel:
+  /v2/sessions/{sessionId}/turns/{turnId}:
     parameters:
-      - $ref: "#/components/parameters/HostId"
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/TurnId"
+    get:
+      operationId: getTurn
+      summary: Read one exact persisted execution observation
+      responses:
+        "200":
+          description: Persisted observation, not a live backend query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Turn"
+        default:
+          $ref: "#/components/responses/Error"
+  /v2/sessions/{sessionId}/turns/{turnId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/TurnId"
     post:
       operationId: cancelTurn
-      tags: [Turns]
-      summary: Request cancellation of an exact active turn
-      description: |
-        Use the specified chat and turnId, never whichever turn is currently active.
-        Known terminal turns are unchanged. Reject unresolved state instead of
-        risking cancellation of another turn. Acceptance is not confirmation;
-        poll getTurn. An HTTP client disconnect does not cancel execution.
+      summary: Cancel the exact identified execution
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [chat, turnId]
-              properties:
-                chat:
-                  type: string
-                  format: uri
-                turnId:
-                  type: string
-                  minLength: 1
+        $ref: "#/components/requestBodies/Empty"
       responses:
         "202":
           description:
-            Cancellation requested or the turn is already terminal. No body.
+            Exact cancellation requested; terminal evidence still required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Turn"
         default:
           $ref: "#/components/responses/Error"
 components:
   parameters:
-    HostId:
-      name: hostId
+    AgentId:
+      name: agentId
       in: path
       required: true
-      description: Stable ID from static configuration, not an endpoint URL.
       schema:
         type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TurnId:
+      name: turnId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        minLength: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+  requestBodies:
+    Empty:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            maxProperties: 0
   responses:
-    CreatedResource:
-      description: The created native AHP URI; no echoed input or service alias.
-      content:
-        application/json:
-          schema:
-            type: object
-            additionalProperties: false
-            required: [resource]
-            properties:
-              resource:
-                type: string
-                format: uri
     Error:
-      description: |
-        400 invalid input; 404 confirmed unknown host/resource/turn/method;
-        409 busy, unsupported capability, existing turn, or upstream_auth_required;
-        502 upstream/ambiguous write failure; 503 not-ready host or unavailable state.
-        A refusal before dispatch can be retried after resolving its cause.
-        An ambiguous write must be reconciled, not blindly repeated.
-        401/403 for inbound access belong to the gateway.
+      description:
+        Explicit input, conflict, authentication, runtime, or storage failure
       content:
         application/json:
           schema:
             type: object
-            additionalProperties: false
             required: [error]
             properties:
               error:
-                $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/ErrorInfo"
   schemas:
-    Host:
+    ErrorInfo:
       type: object
-      additionalProperties: false
-      required: [hostId, status]
-      properties:
-        hostId:
-          type: string
-        status:
-          type: string
-          enum: [idle, starting, ready, stopping, failed]
-        providers:
-          type: array
-          description:
-            Provider IDs, present only when discovery is synchronized and the
-            host is ready.
-          items:
-            type: string
-        authMethods:
-          type: array
-          minItems: 1
-          description:
-            Configured login choices; omit when none. Not a credential
-            inventory.
-          items:
-            type: object
-            additionalProperties: false
-            required: [methodId, provider, resource]
-            properties:
-              methodId:
-                type: string
-              provider:
-                type: string
-                description: Provider ID, or $host for transport authentication.
-              resource:
-                type: string
-                format: uri
-        error:
-          $ref: "#/components/schemas/Error"
-    Session:
-      type: object
-      additionalProperties: false
-      required: [resource, title, provider]
-      properties:
-        resource:
-          type: string
-          format: uri
-        title:
-          type: string
-        provider:
-          type: string
-    Chat:
-      type: object
-      additionalProperties: false
-      required: [resource, title]
-      properties:
-        resource:
-          type: string
-          format: uri
-        title:
-          type: string
-        origin:
-          description:
-            Optional native provenance projection, not a main/subagent
-            classification.
-          $ref: "#/components/schemas/ChatOrigin"
-        interactivity:
-          type: string
-          enum: [full, read-only, hidden]
-          description: Native AHP interaction mode. Absence means full.
-    ChatOrigin:
-      description:
-        Forward only advertised provenance. Missing origin is unknown, not user.
-      oneOf:
-        - type: object
-          additionalProperties: false
-          required: [kind]
-          properties:
-            kind:
-              const: user
-              type: string
-        - type: object
-          additionalProperties: false
-          required: [kind, chat, turnId]
-          properties:
-            kind:
-              type: string
-              enum: [fork, sideChat]
-            chat:
-              type: string
-              format: uri
-            turnId:
-              type: string
-        - type: object
-          additionalProperties: false
-          required: [kind, chat, toolCallId]
-          properties:
-            kind:
-              const: tool
-              type: string
-            chat:
-              type: string
-              format: uri
-            toolCallId:
-              type: string
-    Turn:
-      type: object
-      additionalProperties: false
-      required: [state]
-      properties:
-        state:
-          type: string
-          enum: [running, complete, cancelled, error]
-          description:
-            running projects ChatState.activeTurn. The other values are native
-            AHP TurnState.
-        text:
-          type: string
-          description:
-            Concatenated markdown response parts, possibly partial while
-            running; omit if none. Not a full transcript.
-        inputRequired:
-          type: boolean
-          const: true
-          description:
-            Present only for a running turn known to await user input/tool
-            approval. Answering it is outside this MVP; the caller may cancel.
-        error:
-          $ref: "#/components/schemas/Error"
-          description:
-            Display-safe diagnostic when the host supplies an error; no invented
-            completion cause.
-    Authentication:
-      type: object
-      additionalProperties: false
-      required: [status]
-      properties:
-        status:
-          type: string
-          enum: [idle, pending, action_required, succeeded, failed, expired]
-        methodId:
-          type: string
-          description:
-            Present unless idle; identifies the exact configured binding.
-        step:
-          description: Present exactly when action_required.
-          oneOf:
-            - $ref: "#/components/schemas/LinkStep"
-            - $ref: "#/components/schemas/InputStep"
-        error:
-          $ref: "#/components/schemas/Error"
-    LinkStep:
-      type: object
-      additionalProperties: false
-      required: [kind, url]
-      properties:
-        kind:
-          type: string
-          const: link
-        url:
-          type: string
-          format: uri
-        userCode:
-          type: string
-          description:
-            User-facing device code only; OAuth polling stays in the adapter.
-    InputStep:
-      type: object
-      additionalProperties: false
-      required: [kind, stepId, fields]
-      properties:
-        kind:
-          type: string
-          const: input
-        stepId:
-          type: string
-        fields:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-          description: Exact field names to submit; all values are sensitive.
-    Error:
-      type: object
-      additionalProperties: false
       required: [code, message]
       properties:
         code:
           type: string
         message:
           type: string
-          description:
-            Display-safe explanation; no tokens, stack traces, or raw command
-            output.
+    Coverage:
+      enum: [complete, partial, unknown]
+    Session:
+      type: object
+      required:
+        [
+          sessionId,
+          agentId,
+          workingDirectory,
+          createdAt,
+          updatedAt,
+          observedAt,
+          lastSequence,
+          coverage,
+          backendBound,
+        ]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+        workingDirectory:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        observedAt:
+          type: string
+        lastSequence:
+          type: integer
+        coverage:
+          $ref: "#/components/schemas/Coverage"
+        backendBound:
+          type: boolean
+    Turn:
+      type: object
+      required:
+        [
+          sessionId,
+          turnId,
+          text,
+          state,
+          response,
+          stopReason,
+          error,
+          createdAt,
+          updatedAt,
+          observedAt,
+          lastSequence,
+          coverage,
+        ]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        turnId:
+          type: string
+          format: uuid
+        text:
+          type: string
+        response:
+          type: string
+        state:
+          enum:
+            [
+              accepted,
+              starting,
+              dispatching,
+              running,
+              cancelling,
+              complete,
+              cancelled,
+              error,
+              unknown,
+            ]
+        stopReason:
+          type: [string, "null"]
+        error:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ErrorInfo"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        observedAt:
+          type: string
+        lastSequence:
+          type: integer
+        coverage:
+          $ref: "#/components/schemas/Coverage"
+    Event:
+      type: object
+      required: [sessionId, turnId, sequence, type, payload, source, observedAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        turnId:
+          type: [string, "null"]
+        sequence:
+          type: integer
+        type:
+          type: string
+        payload: {}
+        source:
+          enum: [live, replay, session]
+        observedAt:
+          type: string
+    Auth:
+      type: object
+      required:
+        [
+          agentId,
+          lastKnownStatus,
+          verifiedAt,
+          expiresAt,
+          freshness,
+          invalidationReason,
+          evidence,
+          methods,
+          flow,
+        ]
+      properties:
+        agentId:
+          type: string
+        lastKnownStatus:
+          enum: [authenticated, required, unknown]
+        verifiedAt:
+          type: [string, "null"]
+        expiresAt:
+          type: [string, "null"]
+        freshness:
+          enum: [current, stale, unknown]
+        invalidationReason:
+          type: [string, "null"]
+        evidence:
+          type: [string, "null"]
+        methods:
+          type: array
+          items:
+            type: object
+            required: [id, name, type]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              type:
+                enum: [agent, terminal, native]
+        flow:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/AuthFlow"
+    AuthFlow:
+      type: object
+      required: [operationId, status, expiresAt]
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        status:
+          enum: [pending, action_required, succeeded, failed, expired]
+        expiresAt:
+          type: string
+        step:
+          type: object
+          properties:
+            kind:
+              enum: [link, input]
+            url:
+              type: string
+            userCode:
+              type: string
+            stepId:
+              type: string
+            fields:
+              type: array
+              items:
+                type: string
+        error:
+          $ref: "#/components/schemas/ErrorInfo"
