@@ -106,7 +106,10 @@ describe("Actions npm version availability", () => {
   it("refuses direct local registry verification", () => {
     const result = spawnSync(
       process.execPath,
-      [resolve("scripts", "check-npm-version.ts")],
+      [
+        "--experimental-strip-types",
+        resolve("scripts", "check-npm-version.ts"),
+      ],
       {
         encoding: "utf8",
         env: { ...process.env, GITHUB_ACTIONS: "false" },
