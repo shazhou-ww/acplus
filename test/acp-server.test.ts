@@ -76,6 +76,21 @@ afterEach(async () => {
 describe("durable ACP HTTP /v2", () => {
   it("allows explicit login to omit a method for supported service-side selection", async () => {
     const { server } = await setup();
+    expect(
+      (
+        await api(server.url, "/agents/copilot/auth", "POST", {
+          loginAccount: "bad/account",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await api(server.url, "/agents/copilot/auth", "POST", {
+          loginAccount: "expected-user",
+          methodId: "sign-in",
+        })
+      ).status,
+    ).toBe(400);
     const begin = await api(server.url, "/agents/copilot/auth", "POST", {});
     expect(begin.status).toBe(202);
     await viWaitForLogin();

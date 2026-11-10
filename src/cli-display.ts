@@ -29,9 +29,10 @@ const commands: Record<string, { usage: string; description: string }> = {
       "Show authentication status, public login steps and what to do next. Explicit --confirm-storage yes|no answers the current storage-consent step without hand-writing JSON. Reading status never logs in or sends a paid model probe.",
   },
   "agents login": {
-    usage: "agents login --agent ID [--method METHOD --no-wait --timeout-ms N]",
+    usage:
+      "agents login --agent ID [--login-account GITHUB-LOGIN --method METHOD --no-wait --timeout-ms N]",
     description:
-      "Start login and wait for public device instructions or a result. The service selects its configured supported native adapter or sole advertised Agent method; multiple choices require --method. Complete the shown browser step, then inspect agents auth. --no-wait returns admission; --timeout-ms bounds waiting (default 300000). No model prompt is sent.",
+      "Start login and wait for device instructions or a result. On Linux, --login-account YOUR-GITHUB-LOGIN starts native Copilot device login in the selected profile, even if init omitted the authentication adapter. The username is verified at completion; no credential is accepted. Without it, use the configured adapter or sole advertised method. No automatic fallback/retry. Complete the browser step and inspect agents auth; --no-wait returns admission and --timeout-ms bounds waiting.",
   },
   "agents auth-input": {
     usage: "agents auth-input --agent ID --input-file FILE|-",
@@ -135,7 +136,8 @@ function authOutput(value: Record<string, unknown>): string {
   const agentId =
     typeof value.agentId === "string" ? value.agentId : "AGENT-ID";
   const flow = record(value.flow) ? value.flow : value;
-  const next = `acplus agents auth --agent ${agentId}`;
+  const flags = typeof value.cliContext === "string" ? value.cliContext : "";
+  const next = `acplus agents auth --agent ${agentId}${flags}`;
   const context =
     "Use the same --config, --data-dir or --url options as this command.";
   if (typeof flow.operationId !== "string") {
@@ -145,7 +147,17 @@ function authOutput(value: Record<string, unknown>): string {
           .map((method) => `${display(method.id)} (${display(method.name)})`)
           .join(", ")
       : "";
-    return `Agent: ${agentId}\nLast observed authentication: ${display(value.lastKnownStatus)}\nEvidence freshness: ${display(value.freshness)}\nVerified at: ${display(value.verifiedAt)}${value.invalidationReason ? `\nInvalidated by: ${display(value.invalidationReason)}` : ""}${methods ? `\nLogin methods: ${methods}` : ""}\nThis is cached evidence, not a live model/entitlement check.\nTo log in: acplus agents login --agent ${agentId}\n${context}`;
+    const bootstrap =
+      Array.isArray(value.methods) &&
+      value.methods.some(
+        (method) => record(method) && method.id === "copilot-login",
+      ) &&
+      !value.methods.some(
+        (method) => record(method) && method.id === "native-login",
+      )
+        ? `\nFor first-time Copilot login on Linux without a configured native adapter:\n  acplus agents login --agent ${agentId} --login-account YOUR-GITHUB-LOGIN${flags}`
+        : "";
+    return `Agent: ${agentId}\nLast observed authentication: ${display(value.lastKnownStatus)}\nEvidence freshness: ${display(value.freshness)}\nVerified at: ${display(value.verifiedAt)}${value.invalidationReason ? `\nInvalidated by: ${display(value.invalidationReason)}` : ""}${methods ? `\nLogin methods: ${methods}` : ""}\nThis is cached evidence, not a live model/entitlement check. Stale/unknown evidence alone does not mean stored credentials are invalid.\nTo explicitly log in: acplus agents login --agent ${agentId}${flags}${bootstrap}\n${context}`;
   }
   const observed = Object.hasOwn(value, "lastKnownStatus")
     ? `\nLast observed authentication: ${display(value.lastKnownStatus)}\nEvidence freshness: ${display(value.freshness)}`
@@ -154,12 +166,12 @@ function authOutput(value: Record<string, unknown>): string {
   if (flow.status === "succeeded")
     return `${heading}\n${observed ? "The previous login flow succeeded; interpret current status using the evidence freshness above." : "Authentication succeeded."} This is not a model entitlement or billing guarantee.`;
   if (flow.status === "failed" || flow.status === "expired")
-    return `${heading}\nError: ${display(flow.error)}\nInspect the current evidence: ${next}\n${context}`;
+    return `${heading}\nError: ${display(flow.error)}${record(flow.error) && flow.error.code === "auth_bootstrap_required" ? `\nStart native device login on Linux:\n  acplus agents login --agent ${agentId} --login-account YOUR-GITHUB-LOGIN${flags}\nUse the GitHub account you expect to authorize, not a token or password.` : ""}\nInspect the current evidence: ${next}\n${context}`;
   const step = record(flow.step) ? flow.step : undefined;
   if (step?.kind === "link")
     return `${heading}\n\nOpen in your browser: ${display(step.url)}\nDevice code: ${display(step.userCode)}\nComplete browser authorization, then run:\n  ${next}\n${context}\nFollow any subsequent storage-consent step. Never paste passwords or tokens into acplus.`;
   if (step?.kind === "input")
-    return `${heading}\n\nStorage consent is required. Choose yes only if you accept plaintext credential storage; otherwise choose no.\nTo accept:\n  acplus agents auth --agent ${agentId} --confirm-storage yes\nTo decline:\n  acplus agents auth --agent ${agentId} --confirm-storage no\nThen inspect the result:\n  ${next}\n${context}\nThe CLI submits the exact currently requested step (${display(step.stepId)}). Never provide passwords or tokens.`;
+    return `${heading}\n\nStorage consent is required. Choose yes only if you accept plaintext credential storage; otherwise choose no.\nTo accept:\n  acplus agents auth --agent ${agentId} --confirm-storage yes${flags}\nTo decline:\n  acplus agents auth --agent ${agentId} --confirm-storage no${flags}\nThen inspect the result:\n  ${next}\n${context}\nThe CLI submits the exact currently requested step (${display(step.stepId)}). Never provide passwords or tokens.`;
   return `${heading}\nWaiting for Agent login instructions. Continue by running:\n  ${next}\n${context}\nDo not start a second login flow while this one is pending.`;
 }
 

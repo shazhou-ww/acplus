@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { parseDocument } from "yaml";
-import { ConfigurationError } from "./acp-common.js";
+import { ConfigurationError, loginAccountPattern } from "./acp-common.js";
 import type { Config } from "./acp-types.js";
 export type { AgentConfig, Config, SecretReference } from "./acp-types.js";
 
@@ -97,7 +97,7 @@ export const schema = object(
             type: { const: "copilot" },
             loginAccount: {
               type: "string",
-              pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+              pattern: loginAccountPattern,
             },
           }),
         },

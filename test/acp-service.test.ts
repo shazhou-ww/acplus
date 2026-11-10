@@ -34,6 +34,7 @@ const state = vi.hoisted(() => ({
         input: (
           step: Extract<AuthStep, { kind: "input" }>,
           signal: AbortSignal,
+          expectedLoginAccount?: string,
         ) => Promise<Record<string, string>>,
         signal: AbortSignal,
       ) => Promise<void>
@@ -152,6 +153,23 @@ async function settled(
 }
 
 describe("ACP service admission and failure boundaries", () => {
+  it("passes explicit bootstrap account to native authentication without rewriting the configured binding", async () => {
+    const { service, config } = await setup();
+    const identity = service.select("copilot").identity;
+    const flow = service.beginAuth("copilot", undefined, "expected-user");
+    await vi.waitFor(() => {
+      expect(flow.status).toBe("succeeded");
+    });
+    expect(state.authenticate).toHaveBeenLastCalledWith(
+      undefined,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      "expected-user",
+    );
+    expect(config.agents[0]?.authentication).toBeUndefined();
+    expect(service.select("copilot").identity).toBe(identity);
+  });
   it("deletes local history without touching the workspace or starting an Agent, but rejects busy Agents", async () => {
     const { service, session, root } = await setup();
     const file = join(root, "keep.txt");

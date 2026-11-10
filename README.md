@@ -15,6 +15,12 @@ The CLI now defaults to human-readable output and provides `sessions send`,
 short Session selectors and `sessions delete`. Scripts upgrading from the
 earlier Canaries must add `--json` for machine-readable output.
 
+Unreleased login-bootstrap fix in this checkout: `agents login --login-account`
+can start verified native Copilot device login without an authentication block
+from init; continuation commands retain explicit service options and explain
+stale observations. The published `.2` package still needs the configured
+Copilot native adapter for that path.
+
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
@@ -165,6 +171,9 @@ Ordinary execution requests do not submit provider credentials. Reuse a
 deliberately selected authorized profile, or explicitly provision one:
 
 ```bash
+# If init omitted --login-account, explicitly bootstrap on Linux:
+acplus agents login --agent copilot --login-account YOUR-GITHUB-LOGIN
+# Or use the already configured login adapter:
 acplus agents login --agent copilot
 acplus agents auth --agent copilot
 ```
@@ -194,6 +203,15 @@ explicitly.
 `agents logout --agent copilot` reports success only after the backend confirms;
 unsupported logout fails with guidance and does not erase history or pretend to
 remove credentials. Keep the same `--config`/`--data-dir`/`--url` for a flow.
+
+The expected GitHub login is not your OS username or Agent ID. This explicit
+bootstrap option does not copy credentials or rewrite config/profile identity.
+If Copilot's advertised ACP `copilot-login` method fails with authentication
+required instead of returning a device URL, the CLI explains this native
+bootstrap route instead of asking you to repeat the failed RPC. After browser
+authorization, answer any explicit storage-consent step and inspect auth until
+the flow succeeds. A stale/unknown observation after idle restart alone does not
+mean saved credentials are invalid or that you must log in again.
 
 Cached authentication is **last-observed evidence**, not perpetual validity.
 Restart/reconnect, profile changes, explicit auth/logout, challenges and known

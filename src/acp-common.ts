@@ -10,6 +10,22 @@ export function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+export const loginAccountPattern =
+  "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$";
+
+export function loginAccount(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !new RegExp(loginAccountPattern, "u").test(value)
+  )
+    throw new ServiceError(
+      "invalid_input",
+      400,
+      "loginAccount must be the expected GitHub login name, not a token or password",
+    );
+  return value;
+}
+
 export function diagnostic(error: unknown): ErrorInfo {
   const failure = serviceError(error);
   return { code: failure.code, message: failure.message };

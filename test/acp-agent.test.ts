@@ -22,7 +22,7 @@ app.onRequest(methods.agent.initialize,({params})=>{
  agentCapabilities: mode==='no-resume'?{}: {
  loadSession:mode==='load',sessionCapabilities:mode==='load'?{}:{resume:{}},
  auth:mode==='no-logout'?{}:{logout:{}}},
- authMethods:mode==='no-auth-methods'?[]:mode==='multiple-auth-methods'?[{id:'one',name:'One'},{id:'two',name:'Two'}]:[{id:'standard',name:'Sign in'},{id:'terminal',name:'Terminal',type:'terminal',args:['UNSAFE'],env:{NODE_OPTIONS:'UNSAFE'}}]};
+ authMethods:mode==='bootstrap-required'?[{id:'copilot-login',name:'Copilot CLI login'}]:mode==='no-auth-methods'?[]:mode==='multiple-auth-methods'?[{id:'one',name:'One'},{id:'two',name:'Two'}]:[{id:'standard',name:'Sign in'},{id:'terminal',name:'Terminal',type:'terminal',args:['UNSAFE'],env:{NODE_OPTIONS:'UNSAFE'}}]};
 });
 app.onRequest(methods.agent.session.new,async({client})=>{
  if(mode==='auth-required')throw RequestError.authRequired();
@@ -36,6 +36,7 @@ app.onRequest(methods.agent.session.load,async({params,client})=>{
  return {};
 });
 app.onRequest(methods.agent.authenticate,({params})=>{
+ if(mode==='bootstrap-required')throw RequestError.authRequired();
  if(params.methodId!=='standard'||Object.keys(params).length!==1)throw RequestError.invalidParams();
  if(mode==='auth-fail')throw RequestError.authRequired();
  if(mode==='auth-hang')return new Promise(()=>{});
@@ -286,6 +287,69 @@ describe("owned stable ACP v1 runtime", { timeout: 20_000 }, () => {
     });
     await first.runtime.close();
     await contender.runtime.ensure();
+  });
+
+  it("bootstraps native login using an explicit expected account without changing profile binding", async () => {
+    const { runtime, config, hooks } = await fixture();
+    const before = profileIdentity(config);
+    const native = vi.spyOn(login, "copilotLogin").mockResolvedValue();
+    await runtime.authenticate(
+      undefined,
+      vi.fn(),
+      vi.fn(),
+      new AbortController().signal,
+      "expected-user",
+    );
+    expect(native).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileDir: config.profileDir,
+        authentication: { type: "copilot", loginAccount: "expected-user" },
+      }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(config.authentication).toBeUndefined();
+    expect(profileIdentity(config)).toBe(before);
+    expect(hooks.authenticated).toHaveBeenCalledWith("native_device_login");
+    await expect(
+      runtime.authenticate(
+        "standard",
+        vi.fn(),
+        vi.fn(),
+        new AbortController().signal,
+        "expected-user",
+      ),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(() =>
+      runtime.authenticate(
+        undefined,
+        vi.fn(),
+        vi.fn(),
+        new AbortController().signal,
+        "not an account",
+      ),
+    ).toThrow(expect.objectContaining({ code: "invalid_input" }));
+    expect(native).toHaveBeenCalledOnce();
+  });
+
+  it("explains the default Copilot ACP bootstrap failure without repeating its login RPC", async () => {
+    const { runtime, hooks } = await fixture("bootstrap-required");
+    try {
+      await runtime.authenticate(
+        undefined,
+        vi.fn(),
+        vi.fn(),
+        new AbortController().signal,
+      );
+      throw new Error("Expected bootstrap failure");
+    } catch (error) {
+      expect(error).toMatchObject({ code: "auth_bootstrap_required" });
+      if (!(error instanceof Error)) throw error;
+      expect(error.message).toContain("--login-account");
+    }
+    expect(hooks.authenticated).not.toHaveBeenCalled();
   });
 
   it("releases a failed native flow only after its helper finishes cleanup", async () => {

@@ -75,6 +75,14 @@ paths:
               type: object
               additionalProperties: false
               properties:
+                loginAccount:
+                  type: string
+                  pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+                  description:
+                    Expected GitHub username for explicitly selecting native
+                    Copilot device login in the current profile; not a token or
+                    password. Conflicts with any methodId other than
+                    native-login.
                 methodId:
                   type: string
                   minLength: 1

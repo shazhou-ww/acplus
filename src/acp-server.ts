@@ -6,6 +6,7 @@ import {
   serviceError,
   text,
   uuid,
+  loginAccount,
 } from "./acp-common.js";
 import { Service } from "./acp-service.js";
 import { history, publicSession } from "./acp-history.js";
@@ -99,13 +100,16 @@ async function route(service: Service, request: IncomingMessage) {
     if (method === "GET" && operation === undefined)
       return { status: 200, value: service.auth(agentId) };
     if (method === "POST" && operation === undefined) {
-      const value = await body(request, [], ["methodId"]);
+      const value = await body(request, [], ["methodId", "loginAccount"]);
       return {
         status: 202,
         value: service.beginAuth(
           agentId,
           Object.hasOwn(value, "methodId")
             ? text(value.methodId, "methodId")
+            : undefined,
+          Object.hasOwn(value, "loginAccount")
+            ? loginAccount(value.loginAccount)
             : undefined,
         ),
       };

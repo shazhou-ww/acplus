@@ -107,6 +107,72 @@ const session = "12345678-1234-1234-1234-123456789abc";
 const turn = "12345678-1234-1234-1234-123456789abd";
 
 describe("acplus CLI", () => {
+  it("passes an explicit expected login account for bootstrap without confusing it with Agent identity", async () => {
+    await run([
+      "agents",
+      "login",
+      "--agent",
+      "custom-agent",
+      "--login-account",
+      "expected-user",
+      "--url",
+      url,
+    ]);
+    expect(fetch).toHaveBeenLastCalledWith(
+      `${url}/agents/custom-agent/auth`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ loginAccount: "expected-user" }),
+      }),
+    );
+    for (const account of ["", "invalid name", "bad/token"])
+      await expect(
+        run([
+          "agents",
+          "login",
+          "--agent",
+          "copilot",
+          "--login-account",
+          account,
+          "--url",
+          url,
+        ]),
+      ).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(
+      run([
+        "agents",
+        "login",
+        "--agent",
+        "copilot",
+        "--login-account",
+        "expected-user",
+        "--method",
+        "copilot-login",
+        "--url",
+        url,
+      ]),
+    ).rejects.toThrow("selects native-login");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("preserves explicit remote service options in browser and consent continuation commands", async () => {
+    const flow = {
+      operationId: "flow",
+      status: "action_required",
+      expiresAt: "2030-01-01",
+      step: {
+        kind: "link",
+        url: "https://github.com/login/device",
+        userCode: "ABCD-EFGH",
+      },
+    };
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(flow)));
+    await run(["agents", "login", "--agent", "copilot", "--url", url]);
+    expect(console.log).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        `acplus agents auth --agent copilot --url '${url}'`,
+      ),
+    );
+  });
   it("allows login without an API method ID and provides readable logout results", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(

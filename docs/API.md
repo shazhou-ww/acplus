@@ -149,6 +149,14 @@ A complete current Turn does not establish complete historical Session coverage.
 Authentication endpoints require operator authorization at the external gateway.
 Ordinary execution requests do not carry provider tokens.
 
+POST auth additionally accepts optional `loginAccount`, the expected GitHub
+username for explicit native Copilot device login in the selected profile. This
+operation-scoped option selects `native-login`; any other explicit `methodId`
+conflicts and returns 400. The account follows the same validation as configured
+Copilot authentication, must match the verified login receipt, and is never
+interpreted as a credential. It does not rewrite configuration or profile
+identity. Unsupported service-host platforms fail explicitly.
+
 Begin with `{}` for service-side selection, `{"methodId":"native-login"}` for
 the configured Copilot adapter, or an advertised Agent-driven method. Selection
 uses the configured native adapter when supported on the service host; otherwise

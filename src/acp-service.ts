@@ -11,6 +11,7 @@ import {
   text,
   uuid,
   workspace,
+  loginAccount,
 } from "./acp-common.js";
 import { validateConfig } from "./acp-config.js";
 import { lockDirectory } from "./data-lock.js";
@@ -506,9 +507,22 @@ export class Service {
     return this.store.getTurn(sessionId, turnId);
   }
 
-  beginAuth(agentId: string, methodId?: string): AuthFlow {
+  beginAuth(
+    agentId: string,
+    methodId?: string,
+    expectedLoginAccount?: string,
+  ): AuthFlow {
     const agent = this.select(agentId);
     if (methodId !== undefined) text(methodId, "methodId");
+    if (expectedLoginAccount !== undefined) {
+      loginAccount(expectedLoginAccount);
+      if (methodId !== undefined && methodId !== "native-login")
+        throw new ServiceError(
+          "invalid_input",
+          400,
+          "loginAccount requires native-login, not an Agent RPC method",
+        );
+    }
     if (agent.busy) throw new ServiceError("agent_busy", 409);
     this.store.invalidateAuth(agentId, "authentication_started");
     agent.busy = true;
@@ -541,6 +555,7 @@ export class Service {
             (step, inputSignal) =>
               this.requestInput(agent, flow, step, inputSignal),
             signal,
+            expectedLoginAccount,
           );
           this.authenticated(agentId, "explicit_authentication");
           flow.status = "succeeded";

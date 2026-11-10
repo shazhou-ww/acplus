@@ -151,6 +151,31 @@ describe("human CLI output and focused help", () => {
         },
       },
     });
+    {
+      const message = humanOutput("agents auth", {
+        agentId: "copilot",
+        freshness: "stale",
+        lastKnownStatus: "unknown",
+        methods: [{ id: "copilot-login", name: "Copilot CLI login" }],
+      });
+      expect(message).toContain("--login-account YOUR-GITHUB-LOGIN");
+      expect(message).toContain(
+        "alone does not mean stored credentials are invalid",
+      );
+      const failed = humanOutput("agents login", {
+        agentId: "copilot",
+        operationId: "flow",
+        status: "failed",
+        error: {
+          code: "auth_bootstrap_required",
+          message: "Needs initial device login",
+        },
+        cliContext: " --config '/private/config.yaml'",
+      });
+      expect(failed).toContain(
+        "acplus agents login --agent copilot --login-account YOUR-GITHUB-LOGIN --config '/private/config.yaml'",
+      );
+    }
     expect(code).toContain("Device code: ABCD-EFGH");
     expect(code).toContain("acplus agents auth --agent copilot");
     const consent = humanOutput("agents auth", {

@@ -13,6 +13,7 @@ import {
   ServiceError,
   text,
   uuid,
+  loginAccount,
 } from "./acp-common.js";
 import { loadConfig, validateConfig } from "./acp-config.js";
 import { history, integer } from "./acp-history.js";
@@ -250,7 +251,14 @@ export async function run(args: string[]): Promise<void> {
     health: ["url"],
     "agents:list": ["url"],
     "agents:auth": ["url", "agent", "confirm-storage"],
-    "agents:login": ["url", "agent", "method", "no-wait", "timeout-ms"],
+    "agents:login": [
+      "url",
+      "agent",
+      "method",
+      "login-account",
+      "no-wait",
+      "timeout-ms",
+    ],
     "agents:auth-input": ["url", "agent", "input-file"],
     "agents:logout": ["url", "agent"],
     "sessions:list": ["url", "agent", "limit", "cursor"],
@@ -328,6 +336,13 @@ export async function run(args: string[]): Promise<void> {
   };
   for (const name of requiredOptions[key] ?? []) requireOption(name);
   const json = opts.json === "true";
+  if (opts["login-account"] !== undefined) {
+    loginAccount(opts["login-account"]);
+    if (opts.method !== undefined && opts.method !== "native-login")
+      throw new ConfigurationError(
+        "--login-account selects native-login; omit --method or use --method native-login",
+      );
+  }
   if (
     opts["confirm-storage"] !== undefined &&
     !["yes", "no"].includes(opts["confirm-storage"])
@@ -336,6 +351,17 @@ export async function run(args: string[]): Promise<void> {
       "--confirm-storage must be yes or no; credentials are never accepted here",
     );
   const outputKind = group === "health" ? "health" : `${group} ${action}`;
+  const shellArgument = (value: string): string =>
+    `'${value.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}'`;
+  const contextFlags = opts.url ?? process.env.ACPLUS_URL;
+  const authContext =
+    contextFlags !== undefined
+      ? ` --url ${shellArgument(contextFlags)}`
+      : `${opts.config === undefined ? "" : ` --config ${shellArgument(resolve(opts.config))}`}${opts["data-dir"] === undefined ? "" : ` --data-dir ${shellArgument(resolve(opts["data-dir"]))}`}`;
+  const authenticationOutput = (value: unknown) =>
+    json || !record(value)
+      ? value
+      : { ...value, agentId: requireOption("agent"), cliContext: authContext };
   const isSend = key === "sessions:send";
   const isStart = isSend || key === "turns:start";
   const waitTimeout = integer(opts["timeout-ms"], 300000, 100, 86400000);
@@ -505,10 +531,14 @@ export async function run(args: string[]): Promise<void> {
       path = `/agents/${encodeURIComponent(requireOption("agent"))}/auth`;
       if (action === "login") {
         method = "POST";
-        value =
-          opts.method === undefined
+        value = {
+          ...(opts.method === undefined
             ? {}
-            : { methodId: text(opts.method, "method") };
+            : { methodId: text(opts.method, "method") }),
+          ...(opts["login-account"] === undefined
+            ? {}
+            : { loginAccount: opts["login-account"] }),
+        };
       } else if (action === "auth-input") {
         path += "/input";
         method = "POST";
@@ -634,7 +664,7 @@ export async function run(args: string[]): Promise<void> {
       values: { confirmPlaintextStorage: opts["confirm-storage"] },
     });
     const updated = await remoteRequest(address ?? "", "GET", path);
-    printResult(outputKind, updated, json);
+    printResult(outputKind, authenticationOutput(updated), json);
     return;
   }
   if (key === "agents:login") {
@@ -716,11 +746,7 @@ export async function run(args: string[]): Promise<void> {
           );
       }
     }
-    printResult(
-      outputKind,
-      json ? flow : { ...flow, agentId: requireOption("agent") },
-      json,
-    );
+    printResult(outputKind, authenticationOutput(flow), json);
     if (flow.status === "failed" || flow.status === "expired")
       process.exitCode = 1;
     return;
@@ -730,7 +756,9 @@ export async function run(args: string[]): Promise<void> {
       outputKind,
       key === "sessions:delete" && json
         ? { sessionId: opts.session, deleted: true }
-        : result,
+        : group === "agents" && action === "auth"
+          ? authenticationOutput(result)
+          : result,
       json,
     );
     return;

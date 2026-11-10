@@ -13,7 +13,7 @@ acplus init --agent ID --agent-command PATH [--config FILE --profile PATH --logi
 acplus health --url BASE/v2
 acplus agents list|auth|login|auth-input|logout [--agent ID --method ID --input-file FILE|-]
 acplus agents auth --agent ID [--confirm-storage yes|no]
-acplus agents login --agent ID [--method METHOD --no-wait --timeout-ms N]
+acplus agents login --agent ID [--login-account GITHUB-LOGIN --method METHOD --no-wait --timeout-ms N]
 acplus agents logout --agent ID
 acplus sessions list|create|get [--agent ID --session UUID --working-directory PATH --name NAME]
 acplus sessions send SESSION "MESSAGE" [--turn UUID --no-wait --timeout-ms N]
@@ -174,9 +174,27 @@ acplus serve --config /srv/acplus/config.yaml
 Provision only when needed:
 
 ```bash
+# First-time Copilot login on Linux when init omitted --login-account:
+acplus agents login --agent copilot --login-account YOUR-GITHUB-LOGIN
+# Otherwise, use the configured adapter or supported Agent method:
 acplus agents login --agent copilot
 acplus agents auth --agent copilot
 ```
+
+`YOUR-GITHUB-LOGIN` is the account you expect to authorize in the browser, not
+your OS username, Agent ID, token or password. `login --login-account`
+explicitly selects the Linux native Copilot adapter for this operation in the
+existing selected profile; no need to re-run init or edit YAML. It does not
+change config, profile paths or existing Session bindings. Do not combine it
+with an Agent RPC method such as `--method copilot-login`; omit method or
+specify `native-login`. The receipt must match the expected account before
+success is recorded.
+
+An unconfigured fresh Copilot profile may advertise `copilot-login` while its
+ACP authenticate RPC returns `agent_auth_required` without a device URL. This is
+a bootstrap failure, not instructions to repeat that same RPC. The CLI reports
+`auth_bootstrap_required` with the native command above. There is no automatic
+credential copying, browser authorization, storage consent or native fallback.
 
 Login starts one explicit expiring flow and, by default, waits for public device
 URL/code, a storage-consent step or a terminal result. It prints the browser
@@ -211,6 +229,17 @@ acplus agents auth --agent copilot --confirm-storage yes
 acplus agents auth --agent copilot --confirm-storage no
 acplus agents auth --agent copilot
 ```
+
+Complete the browser step first, then answer a displayed storage-consent step,
+then inspect status again until it says `succeeded` (or an explicit failure).
+Never re-run login merely because auth reports stale/unknown after an idle
+service restart: those are cached-observation states, not a credential check. An
+authorized profile can still serve subsequent execution.
+
+Human follow-up commands include the original explicit `--config`, `--data-dir`
+or URL, so copying a suggested command continues the same flow rather than
+silently switching to the home default. JSON output remains the API flow/
+observation and does not include CLI-only continuation metadata.
 
 Do not send tokens/passwords to this endpoint or put them in command history.
 The CLI fetches the exact currently active step before submitting consent and

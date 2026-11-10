@@ -15,6 +15,7 @@ import {
   Redactor,
   serviceError,
   ServiceError,
+  loginAccount,
 } from "./acp-common.js";
 import {
   AgentProcess,
@@ -566,13 +567,32 @@ export class AcpRuntime {
       signal: AbortSignal,
     ) => Promise<Record<string, string>>,
     signal: AbortSignal,
+    expectedLoginAccount?: string,
   ): Promise<void> {
+    if (expectedLoginAccount !== undefined) loginAccount(expectedLoginAccount);
+    if (
+      expectedLoginAccount !== undefined &&
+      methodId !== undefined &&
+      methodId !== "native-login"
+    )
+      return Promise.reject(
+        new ServiceError(
+          "invalid_input",
+          400,
+          "An expected login account selects native-login; do not combine it with an Agent RPC method",
+        ),
+      );
     return this.serialize(async () => {
+      const nativeAuthentication =
+        expectedLoginAccount === undefined
+          ? this.agent.authentication
+          : { type: "copilot" as const, loginAccount: expectedLoginAccount };
       let selectedMethod = methodId;
+      if (expectedLoginAccount !== undefined) selectedMethod = "native-login";
       if (
         selectedMethod === undefined &&
         process.platform === "linux" &&
-        this.agent.authentication?.type === "copilot"
+        nativeAuthentication?.type === "copilot"
       )
         selectedMethod = "native-login";
       signal.throwIfAborted();
@@ -580,7 +600,7 @@ export class AcpRuntime {
       signal.throwIfAborted();
       if (
         selectedMethod === "native-login" &&
-        this.agent.authentication?.type === "copilot"
+        nativeAuthentication?.type === "copilot"
       ) {
         this.nativeAuthenticating = true;
         const authLifetime = new AbortController();
@@ -598,7 +618,7 @@ export class AcpRuntime {
           this.hooks.invalidated("authentication");
           this.lifetime = authLifetime;
           this.nativePending = copilotLogin(
-            this.agent,
+            { ...this.agent, authentication: nativeAuthentication },
             await waitFor(
               agentEnvironment(this.agent, this.redactor),
               combined,
@@ -660,6 +680,15 @@ export class AcpRuntime {
           await this.close();
           throw new ServiceError("auth_cancelled", 409);
         }
+        if (
+          serviceError(error).code === "agent_auth_required" &&
+          method.id === "copilot-login"
+        )
+          throw new ServiceError(
+            "auth_bootstrap_required",
+            409,
+            "Copilot's ACP login method did not provide a device flow for this profile. On Linux, run agents login with --login-account YOUR-GITHUB-LOGIN to start verified native device login in the selected profile. This is your expected GitHub username, not a token. Do not retry the same copilot-login RPC.",
+          );
         throw error;
       }
       this.hooks.authenticated("agent_authenticate");
