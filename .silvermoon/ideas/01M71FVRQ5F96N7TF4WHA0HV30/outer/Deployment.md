@@ -3,6 +3,8 @@
 现实验收必须在 `office-ubuntu`
 执行，并包含未接触项目设计和实现上下文的独立 subagent 试用。用户已委托主 Agent 负责各门限审查，无须逐次询问；此授权不包含 npm 发布。
 
+实际安装、独立首用过程及协调者复核见 [Ubuntu 实测证据](./Office-Ubuntu.md)。
+
 ## Steps
 
 ### D-S01: 验证实际安装入口
