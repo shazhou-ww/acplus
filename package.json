@@ -20,7 +20,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "acplus": "dist/cli.js"
+    "acplus": "dist/cli.js",
+    "acplus-ai": "dist/cli-ai.js"
   },
   "exports": {
     ".": {

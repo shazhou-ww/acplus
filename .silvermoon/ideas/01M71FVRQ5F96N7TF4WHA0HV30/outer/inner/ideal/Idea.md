@@ -6,7 +6,9 @@
 
 ## 结果
 
-一个包提供 `acplus`（Human Interface）和 `acplus-ai`（Artificial Intelligence / Agent Interface），共享业务能力但分别组织命令、帮助和交互。具体设计见 [CLI 交互设计](./CLI-INTERFACES.md)。
+一个包提供 `acplus`（Human Interface）和 `acplus-ai`（Artificial Intelligence /
+Agent Interface），共享业务能力但分别组织命令、帮助和交互。具体设计见
+[CLI 交互设计](./CLI-INTERFACES.md)。
 
 ## 边界
 

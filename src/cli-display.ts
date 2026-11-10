@@ -104,11 +104,36 @@ export function helpFor(args: string[]): string {
     ? "\n\nUse --json for machine-readable stdout. Existing configuration and data are never silently overwritten."
     : "\n\nOptions: --json (machine-readable stdout), --config FILE, --data-dir PATH, --url BASE/v2.\nAn explicit URL or ACPLUS_URL never starts a replacement service.\nLocal defaults: ~/.acplus/acplus.yaml, 30000 ms idle grace. Agent authentication is explicit.";
   if (words.length === 0)
-    return `acplus - on-demand Agents and durable Session history\n\nUsage:\n${Object.values(
-      commands,
-    )
-      .map((command) => `  acplus ${command.usage}`)
-      .join("\n")}${common}`;
+    return `acplus - on-demand Agents and durable Session history\nHuman interface. For non-interactive JSON automation: acplus-ai --help.\n\n${[
+      ["Setup", ["init", "serve"]],
+      [
+        "Authentication",
+        [
+          "agents list",
+          "agents auth",
+          "agents login",
+          "agents auth-input",
+          "agents logout",
+        ],
+      ],
+      [
+        "Sessions",
+        [
+          "sessions list",
+          "sessions create",
+          "sessions get",
+          "sessions send",
+          "sessions delete",
+        ],
+      ],
+      ["Execution", ["turns list", "turns start", "turns get", "turns cancel"]],
+      ["Diagnostics", ["health", "events list"]],
+    ]
+      .map(
+        ([title, names]) =>
+          `${title as string}:\n${(names as string[]).map((name) => `  acplus ${commands[name]?.usage ?? ""}`).join("\n")}`,
+      )
+      .join("\n\n")}${common}`;
   const selected = commands[key];
   if (selected !== undefined)
     return `Usage: acplus ${selected.usage}\n\n${selected.description}${common}`;

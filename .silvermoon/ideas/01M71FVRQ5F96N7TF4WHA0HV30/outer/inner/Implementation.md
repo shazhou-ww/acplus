@@ -1,20 +1,30 @@
 # Implementation
 
-准备阶段轻量初版；实现阶段再细化文件和参数，交互依据见 [设计说明](./ideal/CLI-INTERFACES.md)。
+交互依据见 [设计说明](./ideal/CLI-INTERFACES.md)，实现和本地验证证据见
+[实现验证](./Verification.md)。本阶段不发布 npm、不变更协议、版本或部署契约。
 
 ## Steps
 
 ### I-S01: 提取共享执行能力
 
-分离终端交互与业务编排，保持配置、传输、等待和服务所有权规则不变。
+`src/cli-core.ts` 共用配置、HTTP/离线历史、服务发现、提交、等待和认证编排。
+`src/cli.ts` 保留 Human 入口、`run` 兼容入口和内部 `_auto-serve`；
+`src/cli-ai.ts` 固定 AI 契约，不通过子进程调用 Human 命令。自动服务仍由既有
+`local-service.ts` 启动 `cli.js _auto-serve`。
 
 ### I-S02: 接入双入口交互契约
 
-新增 AI bin、平铺命令与非交互输出，整理 Human 分组帮助并保留兼容路径。
+同一包增加 `acplus-ai` bin，保留 exports map、files
+allowlist 和既有 Human 参数。AI 使用 17 个平铺命令、全量小写 UUID、命名参数和默认 JSON；
+`session-send`/`turn-start` 必须显式传入 `--turn UUID`。
+`session-send`/`agent-login` 默认仅提交，只有显式 `--wait-ms 100..86400000`
+才等待；删除必须 `--yes`，文件及配置输入拒绝
+`-`，TTY 不改变这些规则。错误与资源内诊断只引用 AI 命令，不改写模型回复或事件 payload。
 
 ### I-S03: 完善测试和使用文档
 
-更新两个入口的示例、包入口检查及交互契约测试，执行现有质量检查。
+README 和 `docs/CLI.md`
+分别说明两个入口；Human 顶层按用途分区，AI 顶层帮助完整列出命令、选项、输出、退出和恢复约束，并保留聚焦帮助。新增单元及实际构建入口测试；入口检查同时校验两条 bin、版本、shebang、帮助及 AI 帮助 UTF-8 体积。执行针对性测试和现有质量检查，不改写只读理想契约。
 
 ## Acceptance criteria
 
@@ -28,4 +38,8 @@
 
 ### I-AC03: 双入口构建和质量检查通过
 
-通过 `pnpm check` 和构建产物双 bin 检查证明两个入口可用；文档分别说明 Human 与 Agent 使用方式。
+通过 `pnpm check`
+和构建产物双 bin 检查证明两个入口可用；文档分别说明 Human 与 Agent 使用方式。
+
+本地实现证据覆盖测试、类型、构建和包形状；协调者已修复准备阶段文档排版，重新执行完整
+`pnpm check` 并通过，见 [实现验证](./Verification.md)。

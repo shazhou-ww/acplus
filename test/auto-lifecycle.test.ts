@@ -311,6 +311,8 @@ describe("native managed service processes", () => {
   }, 30000);
   it("supports a complete human conversation and explicit local history deletion through the native CLI", async () => {
     const { directory, config, file } = await fixture();
+    // Keep ownership stable across CLI startup/ACL checks under coverage load.
+    const grace = "5000";
     const created = await command([
       "sessions",
       "create",
@@ -323,7 +325,7 @@ describe("native managed service processes", () => {
       "--name",
       "Lifecycle conversation",
       "--idle-grace-ms",
-      "1500",
+      grace,
     ]);
     if (
       typeof created !== "object" ||
@@ -354,7 +356,7 @@ describe("native managed service processes", () => {
         "--config",
         file,
         "--idle-grace-ms",
-        "1500",
+        grace,
       ],
       { env, timeout: 20000 },
     );
@@ -381,7 +383,7 @@ describe("native managed service processes", () => {
       "--config",
       file,
       "--idle-grace-ms",
-      "1500",
+      grace,
     ]);
     expect(deleted).toEqual({ sessionId: created.sessionId, deleted: true });
     await released(config.dataDir);
