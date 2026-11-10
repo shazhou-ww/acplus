@@ -40,6 +40,8 @@ describe("acplus publishing contract", () => {
       "metadata.bin['acplus-ai'].replace(/^\\.\\//u, ''), 'dist/cli-ai.js'",
     );
     expect(workflow).toContain("aiGot.sessionId, first.sessionId");
+    expect(workflow).toContain("const smokeIdleGraceMs = '5000'");
+    expect(workflow).toContain("'--idle-grace-ms', smokeIdleGraceMs");
     expect(workflow).toContain(
       "listed.items.filter(item => item.name === first.name).length, 2",
     );

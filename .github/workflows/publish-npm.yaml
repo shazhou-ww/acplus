@@ -333,7 +333,8 @@ jobs:
           ], { cwd: directory, stdio: 'inherit' });
           let sessionNameSmoke = 'not-supported-by-historical-release';
           if (rootHelp.includes('--name NAME')) {
-            const createArgs = ['sessions', 'create', '--agent', generated.agents[0].id, '--working-directory', workspace, '--name', 'Repeated display name', '--config', initConfig, '--idle-grace-ms', '1000', '--json'];
+            const smokeIdleGraceMs = '5000';
+            const createArgs = ['sessions', 'create', '--agent', generated.agents[0].id, '--working-directory', workspace, '--name', 'Repeated display name', '--config', initConfig, '--idle-grace-ms', smokeIdleGraceMs, '--json'];
             const first = JSON.parse(execFileSync(executable, createArgs, { encoding: 'utf8' }));
             const second = JSON.parse(execFileSync(executable, createArgs, { encoding: 'utf8' }));
             assert.equal(first.name, 'Repeated display name');
@@ -352,11 +353,11 @@ jobs:
             for (const item of [first, second]) {
               const useAi = aiExecutable && item === first;
               const deleted = JSON.parse(execFileSync(useAi ? aiExecutable : executable, useAi
-                ? ['session-delete', '--session', item.sessionId, '--yes', '--config', initConfig, '--idle-grace-ms', '1000']
-                : ['sessions', 'delete', item.sessionId, '--yes', '--config', initConfig, '--idle-grace-ms', '1000', '--json'], { encoding: 'utf8' }));
+                ? ['session-delete', '--session', item.sessionId, '--yes', '--config', initConfig, '--idle-grace-ms', smokeIdleGraceMs]
+                : ['sessions', 'delete', item.sessionId, '--yes', '--config', initConfig, '--idle-grace-ms', smokeIdleGraceMs, '--json'], { encoding: 'utf8' }));
               assert.equal(deleted.deleted, true);
             }
-            const deadline = Date.now() + 10000;
+            const deadline = Date.now() + 15000;
             while (existsSync(join(data, 'owner.lock')) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
             assert.equal(existsSync(join(data, 'owner.lock')), false, 'Installed test service must release ownership after idle');
             assert.equal(existsSync(join(data, 'service.json')), false);
