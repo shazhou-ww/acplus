@@ -37,11 +37,12 @@ Session display-name checks passed in
 The prior `.3` version's independent Ubuntu lifecycle and real Copilot
 acceptance passed; see the
 [deployment evidence](.silvermoon/ideas/01M6ZY4YA4AQSDGPR58KXG3B9Z/outer/Verification.md).
-Install the explicit-ID, named-Session and guided-authentication Canary:
+Install the dual-interface and login-bootstrap Canary after publication:
 
 ```powershell
-npm install --global acplus@0.1.0-canary.20261110.2
+npm install --global acplus@0.1.0-canary.20261110.3
 acplus --version
+acplus-ai --version
 ```
 
 See [API](docs/API.md), [OpenAPI](docs/openapi.yaml), [CLI](docs/CLI.md),
