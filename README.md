@@ -17,9 +17,9 @@ The checkout builds two commands from one package: **`acplus`** for people
 Both share the same execution core, configuration, history and service
 ownership. `acplus --json` remains compatible with existing scripts; the AI
 interface is the recommended automation path. Canary `0.1.0-canary.20261110.3`
-is the release candidate for both interfaces.
+is the verified release for both interfaces.
 
-This candidate also adds `agents login --login-account` and
+This release also adds `agents login --login-account` and
 `acplus-ai agent-login --login-account`, which can start verified native Copilot
 device login without an authentication block from init; continuation commands
 retain explicit service options and explain stale observations. The earlier `.2`
@@ -28,16 +28,20 @@ package still needs the configured Copilot native adapter for that path.
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
 proxy, or a task queue. Previously published AHP packages remain unchanged. The
-verified release is `acplus@0.1.0-canary.20261110.2` on npm `canary`; the
+verified release is `acplus@0.1.0-canary.20261110.3` on npm `canary`; the
 reserved package's `latest` placeholder is not this runtime.
 
-This Canary's registry, provenance, installed CLI/import/init and duplicate
-Session display-name checks passed in
-[GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42723894242).
-The prior `.3` version's independent Ubuntu lifecycle and real Copilot
-acceptance passed; see the
+This Canary's registry, provenance, both installed CLI entries, import/init and
+duplicate Session display-name checks passed in
+[GitHub Actions](https://github.com/shazhou-ww/acplus/actions/runs/42745105562).
+Its
+[OIDC publication](https://github.com/shazhou-ww/acplus/actions/runs/42744390016)
+used npm `canary` and left `latest` unchanged at `0.0.0`. Independent first-use
+testing of the dual interface on `office-ubuntu` is recorded in the
+[deployment evidence](.silvermoon/ideas/01M71FVRQ5F96N7TF4WHA0HV30/outer/Office-Ubuntu.md).
+Earlier independent Ubuntu lifecycle and real Copilot acceptance passed; see the
 [deployment evidence](.silvermoon/ideas/01M6ZY4YA4AQSDGPR58KXG3B9Z/outer/Verification.md).
-Install the dual-interface and login-bootstrap Canary after publication:
+Install the dual-interface and login-bootstrap Canary:
 
 ```powershell
 npm install --global acplus@0.1.0-canary.20261110.3
