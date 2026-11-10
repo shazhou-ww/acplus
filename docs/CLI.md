@@ -1,9 +1,89 @@
 # acplus CLI
 
-The package and CLI command are named `acplus`; the checkout entry is
-`node dist/cli.js`. ACP is the Agent protocol, not the CLI name. The CLI uses
-HTTP `/v2` and stable ACP wire v1. No legacy `hosts`, `chats`, or `/v1`
-compatibility.
+One package provides `acplus` (Human) and `acplus-ai` (Agent), backed by the
+same execution core, configuration, durable history and local service. Checkout
+entries are `node .\dist\cli.js` and `node .\dist\cli-ai.js`. ACP is the Agent
+protocol, not the CLI name. Both entries use HTTP `/v2` and stable ACP wire v1.
+No legacy `hosts`, `chats`, or `/v1` compatibility.
+
+## Agent CLI: complete non-interactive contract
+
+`acplus-ai --help` lists every command and option with output, exit and recovery
+semantics; focused `COMMAND --help` remains available. No positional operands,
+implicit latest target, Session prefixes or public foreground `serve` command.
+The Human entry manages persistent foreground services. `_auto-serve` remains
+internal to the shared automatic-service mechanism and absent from both helps.
+
+```text
+acplus-ai init --agent ID --agent-command PATH [--config FILE --profile PATH --login-account LOGIN --data-dir PATH --port N]
+acplus-ai health
+acplus-ai agent-list
+acplus-ai agent-auth --agent ID [--confirm-storage yes|no]
+acplus-ai agent-login --agent ID [--login-account GITHUB-LOGIN --method METHOD --wait-ms N --idle-grace-ms N]
+acplus-ai agent-auth-input --agent ID --input-file FILE
+acplus-ai agent-logout --agent ID
+acplus-ai session-list [--agent ID --limit N --cursor CURSOR]
+acplus-ai session-create --agent ID --working-directory PATH [--name NAME --idle-grace-ms N]
+acplus-ai session-get --session UUID
+acplus-ai session-send --session UUID --turn UUID (--text TEXT | --text-file FILE) [--wait-ms N --idle-grace-ms N]
+acplus-ai session-delete --session UUID --yes [--idle-grace-ms N]
+acplus-ai turn-list --session UUID [--limit N --cursor CURSOR]
+acplus-ai turn-start --session UUID --turn UUID (--text TEXT | --text-file FILE) [--idle-grace-ms N]
+acplus-ai turn-get --session UUID --turn UUID
+acplus-ai turn-cancel --session UUID --turn UUID
+acplus-ai event-list --session UUID [--turn UUID --after N --limit N]
+```
+
+All commands except `init` accept `--config FILE`, `--data-dir PATH`,
+`--url BASE/v2`, and optional redundant `--json`; `init` accepts its listed
+options plus `--json`. `--url` overrides `ACPLUS_URL` and never falls back to
+local startup. Defaults and HTTP `/v2` response shapes match the Human entry.
+List pagination uses `limit` 1..1000 (default 100), opaque `nextCursor` passed
+as `--cursor`; event pagination uses nonnegative `--after` (default 0) and
+returned `nextAfter`, with Session-wide sequences. A null cursor ends paging.
+
+All Session and Turn selectors must be full lowercase UUIDs. Both `session-send`
+and `turn-start` require caller-allocated `--turn UUID` before admission. They
+submit once; no write retry. Default `session-send` and `agent-login` return
+immediately with admission/current flow. Only these two commands accept
+`--wait-ms` (100..86400000); the Human `--no-wait`/`--timeout-ms` spelling is
+not part of the AI contract. `turn-start` always returns admission.
+
+AI never reads stdin, creates readline, prompts or opens UI, including on TTY.
+`--text-file -`, `--input-file -` and `--config -` fail before side effects.
+Deletion requires `--yes`; authentication storage consent is never implied.
+`agent-login` returns the operation ID/state and public step when available. On
+pending/action_required, use `acplus-ai agent-auth --agent ID` with the same
+service options, complete browser work externally, then submit the exact
+requested JSON step via `agent-auth-input` or explicit storage consent via
+`agent-auth --confirm-storage yes|no`. Do not start a replacement login flow.
+
+On Linux, `agent-login --login-account YOUR-GITHUB-LOGIN` explicitly selects
+verified native Copilot device login in the existing profile, even without a
+configured authentication adapter. The value is an expected GitHub username, not
+a credential; omit `--method` or use `native-login`. Configuration and profile
+identity are not rewritten. Bootstrap failures refer to the AI command, and
+stale evidence alone is not a request to log in again.
+
+Stdout contains one JSON result, including `null` for acknowledgement-only
+responses. Stderr contains independently parseable JSON Lines:
+`{event:"turn_submitting",sessionId,turnId}` before Turn dispatch,
+`{error:{code,message}}` on failure, and
+`{event:"runtime_warning",name,message}` for Node runtime warnings. No progress
+text/ANSI is mixed in. `--help`/`-h` and `--version`/`-V` are text exceptions.
+Interrupted processes need not produce final JSON.
+
+Exit codes: 0 successful observation/admission; 1 operation failure, login
+failed/expired, wait timeout or non-complete terminal Turn; 2 invalid input. An
+observation of `error` or `unknown` via `turn-get` is still exit 0. Explicit
+waiting returns terminal Turn `complete` (0) or `cancelled`/`error`/`unknown`
+(1). Timeout or disconnect stops waiting, not execution; cancellation requires
+`acplus-ai turn-cancel --session UUID --turn UUID`. After ambiguous admission,
+preserve the stderr receipt and reconcile through `acplus-ai turn-get` using the
+original ID/text. Never generate a new ID as an automatic retry; `unknown` is
+not completed, failed or safe-to-retry.
+
+## Human CLI: compatible grouped commands
 
 ```text
 acplus --help

@@ -34,6 +34,12 @@ describe("acplus publishing contract", () => {
       "generated.agents[0].id, explicitAgent ? 'fixture-agent' : 'copilot'",
     );
     expect(workflow).toContain("sessionNameSmoke = 'passed'");
+    expect(workflow).toContain("builtAiCliPresent: true");
+    expect(workflow).toContain("aiCliSmoke = 'passed'");
+    expect(workflow).toContain(
+      "metadata.bin['acplus-ai'].replace(/^\\.\\//u, ''), 'dist/cli-ai.js'",
+    );
+    expect(workflow).toContain("aiGot.sessionId, first.sessionId");
     expect(workflow).toContain(
       "listed.items.filter(item => item.name === first.name).length, 2",
     );

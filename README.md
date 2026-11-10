@@ -11,15 +11,19 @@ unchanged.
 One ESM TypeScript package providing **on-demand ACP Agents and durable Session
 history over HTTP**.
 
-The CLI now defaults to human-readable output and provides `sessions send`,
-short Session selectors and `sessions delete`. Scripts upgrading from the
-earlier Canaries must add `--json` for machine-readable output.
+The checkout builds two commands from one package: **`acplus`** for people
+(grouped commands, readable output, optional TTY confirmation), and
+**`acplus-ai`** for agents (flat named arguments, JSON, never stdin/prompts).
+Both share the same execution core, configuration, history and service
+ownership. `acplus --json` remains compatible with existing scripts; the AI
+interface is the recommended automation path. Canary `0.1.0-canary.20261110.3`
+is the release candidate for both interfaces.
 
-Unreleased login-bootstrap fix in this checkout: `agents login --login-account`
-can start verified native Copilot device login without an authentication block
-from init; continuation commands retain explicit service options and explain
-stale observations. The published `.2` package still needs the configured
-Copilot native adapter for that path.
+This candidate also adds `agents login --login-account` and
+`acplus-ai agent-login --login-account`, which can start verified native Copilot
+device login without an authentication block from init; continuation commands
+retain explicit service options and explain stale observations. The earlier `.2`
+package still needs the configured Copilot native adapter for that path.
 
 The repository implementation now uses `/v2` and connects directly to stable ACP
 **wire v1**. It does not use AHP, AHPD, VS Code Agent Host, a compatibility
@@ -85,6 +89,7 @@ pnpm install
 pnpm --config.verifyDepsBeforeRun=false check
 pnpm build
 node .\dist\cli.js --help
+node .\dist\cli-ai.js --help
 ```
 
 The check flag avoids unrelated dependency reconciliation on this development
@@ -101,6 +106,36 @@ Install that explicit tarball into a separate prefix and retain its hash and
 lockfile for acceptance. No local `npm publish`, including `--dry-run`. The
 `files` allowlist contains `dist`, this README and LICENSE; repository `docs/`
 and example files are not installed.
+
+## Agent interface
+
+`acplus-ai --help` includes all public commands/options and recovery rules in
+one compact reference; `acplus-ai session-send --help` gives focused help. Use
+full lowercase Session/Turn UUIDs and allocate the Turn ID **before** sending:
+
+```powershell
+acplus-ai session-create --agent copilot --working-directory 'D:\Code\project'
+$turn = [guid]::NewGuid().ToString()
+acplus-ai session-send --session FULL-SESSION-UUID --turn $turn --text "Explain this project."
+acplus-ai turn-get --session FULL-SESSION-UUID --turn $turn
+```
+
+Submission returns admission immediately. Add `--wait-ms 300000` to
+`session-send` or `agent-login` for explicit bounded waiting (100..86400000 ms).
+Waiting timeout/disconnect is not cancellation; use `turn-cancel` with the exact
+Session and Turn. After a lost write response, reconcile the original ID/text;
+never silently resend with a new ID, especially for `unknown` outcomes.
+`session-delete` always requires `--yes`. File inputs must name files, never
+`-`. Login defaults to admission/current flow: inspect `agent-auth`, perform
+browser actions externally, then use `agent-auth-input` for the exact requested
+step or `agent-auth --confirm-storage yes|no` for explicit storage consent.
+
+Stdout is one JSON result (including `null` acknowledgements); stderr is JSON
+Lines for submission receipts, errors and runtime warnings. Help/version are
+text exceptions. Exit 0 means successful observation/admission, not necessarily
+successful execution; exit 1 covers operation/wait/execution failure, exit 2
+invalid input. Read-only `turn-get` of `error`/`unknown` still exits 0. See the
+complete [CLI contracts](docs/CLI.md).
 
 ## Configure and run
 

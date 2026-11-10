@@ -25,7 +25,7 @@ describe("ACP public package shape", () => {
       main: "./dist/index.js",
       types: "./dist/index.d.ts",
       name: "acplus",
-      bin: { acplus: "dist/cli.js" },
+      bin: { acplus: "dist/cli.js", "acplus-ai": "dist/cli-ai.js" },
       files: ["dist", "README.md", "LICENSE"],
       exports: {
         ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
