@@ -59,7 +59,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "2.4.0",
+    "@agentclientprotocol/sdk": "2.9.1",
     "ajv": "^8.17.1",
     "yaml": "^2.8.1"
   },
